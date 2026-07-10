@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nybiscan"
+version = "0.1.0"
+description = "NybiScan core: project-based HTTP/HTTPS intercepting proxy for authorized penetration testing."
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2",
+    "fastapi",
+    "uvicorn[standard]",
+    "sqlcipher3==0.6.2",
+    "argon2-cffi",
+    "tomli-w",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "httpx"]
+
+[project.scripts]
+nybiscan = "nybiscan.cli.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
