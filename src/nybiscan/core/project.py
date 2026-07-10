@@ -22,6 +22,7 @@ from .errors import (
     ProjectExistsError,
     ProjectNotFoundError,
 )
+from .events import EventHub
 from .filters import StorageContext
 from .schemas import KdfParams, ProjectMeta
 from .store import db, repository
@@ -52,12 +53,14 @@ class Project:
         read_conn,
         writer: BatchWriter,
         ctx: StorageContext,
+        events: EventHub,
     ) -> None:
         self.bundle = bundle
         self.toml = toml_data
         self.read_conn = read_conn
         self.writer = writer
         self.ctx = ctx
+        self.events = events
 
     @property
     def is_encrypted(self) -> bool:
@@ -66,6 +69,15 @@ class Project:
     @property
     def session_db(self) -> Path:
         return self.bundle / SESSION_DB
+
+    def listen_settings(self) -> tuple[str, int]:
+        """Proxy listen ip/port from project.toml, falling back to defaults."""
+        listen = self.toml.get("listen", {}) or {}
+        return str(listen.get("ip", "127.0.0.1")), int(listen.get("port", 8080))
+
+    def ca_confdir(self) -> Path:
+        """The project's CA override directory (may not exist yet)."""
+        return self.bundle / "ca"
 
     def meta(self) -> ProjectMeta:
         return repository.read_project_meta(self.read_conn)
@@ -189,8 +201,18 @@ def open_project(path: Path | str, passphrase: Optional[str] = None) -> Project:
     ctx = _build_ctx(bundle, encrypted)
     session_db = str(bundle / SESSION_DB)
 
-    # Reader connection (main thread). Wrong passphrase fails here first.
-    read_conn = db.open_connection(session_db, key, check_same_thread=True)
-    writer = BatchWriter(session_db, key, ctx)
+    # Reader connection. check_same_thread=False because the control API dispatches
+    # requests across a threadpool and the lifespan shutdown closes on another
+    # thread; SQLite/SQLCipher are built serialized so this is safe. Wrong
+    # passphrase still fails here first.
+    read_conn = db.open_connection(session_db, key, check_same_thread=False)
 
-    return Project(bundle, toml_data, read_conn, writer, ctx)
+    # Bring an older (v1) bundle up to date, then sweep any pending rows left by
+    # a prior hard kill (no live capture is producing them at open time).
+    db.migrate(read_conn)
+    repository.mark_pending_interrupted(read_conn)
+
+    events = EventHub()
+    writer = BatchWriter(session_db, key, ctx, event_hub=events)
+
+    return Project(bundle, toml_data, read_conn, writer, ctx, events)

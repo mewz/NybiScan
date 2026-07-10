@@ -20,6 +20,7 @@ from ...core.errors import (
     WrongPassphraseError,
 )
 from ..auth import require_token
+from ..state import AppState
 
 router = APIRouter(prefix="/projects")
 
@@ -36,7 +37,7 @@ class OpenProjectRequest(BaseModel):
     passphrase: Optional[str] = None
 
 
-def _current_payload(state) -> dict:
+def _current_payload(state: AppState) -> dict:
     if state.project is None:
         return {"project_open": False}
     meta = state.project.meta()
@@ -47,43 +48,44 @@ def _current_payload(state) -> dict:
         "uuid": meta.uuid,
         "encrypted": meta.encrypted,
         "record_count": meta.record_count,
+        "proxy_running": state.proxy is not None and state.proxy.running,
     }
 
 
 @router.post("")
-def create_project(req: CreateProjectRequest, state=Depends(require_token)):
-    state.close_project()
+def create_project(req: CreateProjectRequest, state: AppState = Depends(require_token)):
     try:
-        state.project = core_project.create_project(
+        project = core_project.create_project(
             req.path, name=req.name, scope=req.scope, passphrase=req.passphrase
         )
     except ProjectExistsError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except NybiScanError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    state.attach_project(project)
     return _current_payload(state)
 
 
 @router.post("/open")
-def open_project(req: OpenProjectRequest, state=Depends(require_token)):
-    state.close_project()
+def open_project(req: OpenProjectRequest, state: AppState = Depends(require_token)):
     try:
-        state.project = core_project.open_project(req.path, passphrase=req.passphrase)
+        project = core_project.open_project(req.path, passphrase=req.passphrase)
     except ProjectNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except (PassphraseRequiredError, WrongPassphraseError) as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
     except NybiScanError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    state.attach_project(project)
     return _current_payload(state)
 
 
 @router.post("/close")
-def close_project(state=Depends(require_token)):
+def close_project(state: AppState = Depends(require_token)):
     state.close_project()
     return {"project_open": False}
 
 
 @router.get("/current")
-def current_project(state=Depends(require_token)):
+def current_project(state: AppState = Depends(require_token)):
     return _current_payload(state)

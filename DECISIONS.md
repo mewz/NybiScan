@@ -43,7 +43,53 @@ Terse log of locked decisions. Newest context lives in CLAUDE.md.
   SQLCipher bundled (no brew/system lib needed).
 - Control API `/health` is unauthenticated; all project detail is authed-only.
 
-## Scope guardrails (this session = Plan 1)
+## Scope guardrails (Plan 1)
 
 - No GUI code. No proxy/mitmproxy code. No CA generation code.
 - `nybiscan.core` must import zero GUI/API frameworks.
+
+## Locked (Plan 2)
+
+- Proxy engine: mitmproxy 12.2.3 (pure-Python wheel), run IN-PROCESS as a
+  DumpMaster on a dedicated thread with its own asyncio loop. Not a subprocess:
+  the single-writer reuse constraint requires the addon to share the in-process
+  BatchWriter. The capture addon enqueues INSERT/UPDATE ops onto that one writer;
+  it never opens a db connection.
+- pending -> complete/error persisted via INSERT on request, UPDATE on
+  response/error, correlated by flow_id (mitmproxy flow id). Schema v1 -> v2 adds
+  flow_id (indexed), req_content_encoding, resp_content_encoding. migrate() is
+  transactional and idempotent; runs on open. Stale pending rows (from a prior
+  hard kill) are swept to error on open.
+- In-session abandoned flows (client disconnect mid-flight with no clean
+  response/error hook) may remain pending until the next open, where the sweep
+  marks them error. mitmproxy's error hook covers upstream failures/timeouts.
+- Two listeners, never conflated: control API on 127.0.0.1 auto-picked port with
+  bearer auth (unchanged); proxy on 127.0.0.1:8080 default (project.toml [listen],
+  IPv4, user-editable), no token (it speaks HTTP proxy protocol to browsers).
+- Proxy lifecycle: `nybiscan proxy start --project P` runs foreground (opens
+  project, starts proxy, prints addrs + CA hint, blocks). Clean shutdown (Ctrl-C
+  or POST /proxy/stop) drains the writer and checkpoints the WAL via
+  Project.close. `proxy stop` stops only the proxy component.
+- CA: mitmproxy CertStore under ~/.nybiscan/ca/ (global default) or <bundle>/ca/
+  (project override), NEVER ~/.mitmproxy/. Global dir overridable via
+  NYBISCAN_CA_DIR (used by tests to stay hermetic). Resolution: project CA if
+  present, else global, else generate into global. Regenerating a global CA
+  requires explicit confirmation (invalidates existing trust). Export ships the
+  public cert only (PEM/DER); never the private key.
+- ssl_insecure (unverified upstream TLS) defaults False and is honored ONLY when
+  NYBISCAN_ALLOW_INSECURE is set; its effective value is surfaced in
+  GET /proxy/status. Test-only; never a normal-use option.
+- WebSocket /ws/history auth is via Authorization header or the "nybiscan" token
+  subprotocol, NOT a ?token= query param (no secrets in URLs). Events:
+  entry_created then entry_updated, creates published before updates per flush.
+- Read connection opened with check_same_thread=False (control API dispatches
+  across a threadpool; SQLite/SQLCipher are serialized builds). Writer keeps its
+  own dedicated write connection (single-writer invariant intact).
+- pydantic pinned <2.12: mitmproxy 12.2.3 caps typing-extensions<=4.14 while
+  pydantic>=2.12 needs >=4.14.1. Capping keeps all deps on prebuilt wheels.
+
+## Scope guardrails (Plan 2)
+
+- No GUI. No Bench/replay. No dashboard/spider. No MCP. Later plans.
+- Reuse Plan 1 (BatchWriter, filters, schemas, repository, Project.close);
+  extensions are additive, not forks.

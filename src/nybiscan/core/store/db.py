@@ -17,9 +17,10 @@ from typing import Optional
 
 from ..errors import WrongPassphraseError
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 _HISTORY_COLUMNS = (
+    "flow_id",
     "scheme",
     "host",
     "port",
@@ -31,6 +32,7 @@ _HISTORY_COLUMNS = (
     "req_body_ref",
     "req_body_dropped",
     "req_length",
+    "req_content_encoding",
     "req_start_ts",
     "status",
     "resp_length",
@@ -40,8 +42,17 @@ _HISTORY_COLUMNS = (
     "resp_body",
     "resp_body_ref",
     "resp_body_dropped",
+    "resp_content_encoding",
     "resp_complete_ts",
     "capture_status",
+)
+
+# Columns added in schema v2, applied to a v1 db by migrate(). Each entry is
+# (column_name, column_type) matching the CREATE TABLE definitions below.
+_V2_COLUMNS = (
+    ("flow_id", "TEXT"),
+    ("req_content_encoding", "TEXT"),
+    ("resp_content_encoding", "TEXT"),
 )
 
 _DDL = """
@@ -51,31 +62,35 @@ CREATE TABLE IF NOT EXISTS meta (
 );
 
 CREATE TABLE IF NOT EXISTS history (
-    id                INTEGER PRIMARY KEY AUTOINCREMENT,
-    scheme            TEXT    NOT NULL,
-    host              TEXT    NOT NULL,
-    port              INTEGER NOT NULL,
-    method            TEXT    NOT NULL,
-    url               TEXT    NOT NULL,
-    req_headers_raw   TEXT    NOT NULL DEFAULT '',
-    req_mime_type     TEXT,
-    req_body          BLOB,
-    req_body_ref      TEXT,
-    req_body_dropped  INTEGER NOT NULL DEFAULT 0,
-    req_length        INTEGER NOT NULL DEFAULT 0,
-    req_start_ts      INTEGER NOT NULL DEFAULT 0,
-    status            INTEGER,
-    resp_length       INTEGER NOT NULL DEFAULT 0,
-    mime_type         TEXT,
-    remote_ip         TEXT,
-    resp_headers_raw  TEXT    NOT NULL DEFAULT '',
-    resp_body         BLOB,
-    resp_body_ref     TEXT,
-    resp_body_dropped INTEGER NOT NULL DEFAULT 0,
-    resp_complete_ts  INTEGER,
-    capture_status    TEXT    NOT NULL DEFAULT 'pending'
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    flow_id               TEXT,
+    scheme                TEXT    NOT NULL,
+    host                  TEXT    NOT NULL,
+    port                  INTEGER NOT NULL,
+    method                TEXT    NOT NULL,
+    url                   TEXT    NOT NULL,
+    req_headers_raw       TEXT    NOT NULL DEFAULT '',
+    req_mime_type         TEXT,
+    req_body              BLOB,
+    req_body_ref          TEXT,
+    req_body_dropped      INTEGER NOT NULL DEFAULT 0,
+    req_length            INTEGER NOT NULL DEFAULT 0,
+    req_content_encoding  TEXT,
+    req_start_ts          INTEGER NOT NULL DEFAULT 0,
+    status                INTEGER,
+    resp_length           INTEGER NOT NULL DEFAULT 0,
+    mime_type             TEXT,
+    remote_ip             TEXT,
+    resp_headers_raw      TEXT    NOT NULL DEFAULT '',
+    resp_body             BLOB,
+    resp_body_ref         TEXT,
+    resp_body_dropped     INTEGER NOT NULL DEFAULT 0,
+    resp_content_encoding TEXT,
+    resp_complete_ts      INTEGER,
+    capture_status        TEXT    NOT NULL DEFAULT 'pending'
 );
 CREATE INDEX IF NOT EXISTS idx_history_host ON history(host);
+CREATE INDEX IF NOT EXISTS idx_history_flow_id ON history(flow_id);
 
 CREATE TABLE IF NOT EXISTS sites (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -144,3 +159,40 @@ def open_connection(
 def create_schema(conn) -> None:
     conn.executescript(_DDL)
     conn.commit()
+
+
+def _existing_columns(conn) -> set:
+    return {row[1] for row in conn.execute("PRAGMA table_info(history)").fetchall()}
+
+
+def _schema_version(conn) -> int:
+    row = conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()
+    return int(row[0]) if row else 1
+
+
+def migrate(conn) -> None:
+    """Bring a v1 database up to v2. Transactional and idempotent.
+
+    Adds the v2 columns and flow_id index, then bumps schema_version, all in one
+    transaction so a crash mid-migration cannot leave a half-v2 db. Re-running on
+    a v2 db is a no-op. Safe under SQLCipher (the key is already set on conn).
+    """
+    if _schema_version(conn) >= SCHEMA_VERSION:
+        return
+
+    existing = _existing_columns(conn)
+    conn.execute("BEGIN")
+    try:
+        for name, coltype in _V2_COLUMNS:
+            if name not in existing:
+                conn.execute(f"ALTER TABLE history ADD COLUMN {name} {coltype}")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_history_flow_id ON history(flow_id)")
+        conn.execute(
+            "INSERT INTO meta (key, value) VALUES ('schema_version', ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (str(SCHEMA_VERSION),),
+        )
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise

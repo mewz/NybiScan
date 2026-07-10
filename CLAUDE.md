@@ -49,7 +49,10 @@ to evade detection, exfiltrate data, or attack out-of-scope hosts.
 - Global settings live outside any project in
   `~/Library/Application Support/NybiScan/` as TOML.
 
-## CA model (built in Plan 2, documented now)
+## CA model (built in Plan 2)
+
+Implemented in `core/ca.py`, driven by CLI `nybiscan ca ...`. The global CA dir
+is overridable via `NYBISCAN_CA_DIR` (tests use this to stay hermetic).
 
 - CA material is GLOBAL by default (`~/.nybiscan/ca/`) so the user trusts a CA
   once and reuses it across projects. Stored history is plaintext HTTP and
@@ -77,12 +80,14 @@ to evade detection, exfiltrate data, or attack out-of-scope hosts.
 
 ## Phased plan
 
-1. Core foundation + persistence (THIS session, done): project store, schemas,
-   SQLite WAL + batched writer, SQLCipher encrypted path, TOML config, control
-   API skeleton (health + projects), CLI, pytest. No proxy, no GUI.
-2. Proxy engine + capture (mitmproxy addon), CA generate/export/import, history
-   over API + WebSocket.
-3. macOS Swift/SwiftUI GUI (history).
+1. Core foundation + persistence (done): project store, schemas, SQLite WAL +
+   batched writer, SQLCipher encrypted path, TOML config, control API skeleton
+   (health + projects), CLI, pytest. No proxy, no GUI.
+2. Proxy engine + capture (done): in-process mitmproxy addon writing via the
+   Plan 1 BatchWriter (schema v2: flow_id + content_encoding; pending -> complete
+   /error), CA generate/export/import, history over authed REST + a
+   /ws/history WebSocket. Proxy listener is separate from the control API.
+3. macOS Swift/SwiftUI GUI (history). NEXT.
 4. Bench (replay) + match/replace + decompress.
 5. Dashboard site map + scoped spider.
 6. MCP server over the core.
