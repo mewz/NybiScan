@@ -287,24 +287,48 @@ def cmd_ca_info(args: argparse.Namespace) -> int:
 
 
 def cmd_history(args: argparse.Namespace) -> int:
-    path = "/history?limit=%d" % args.limit
+    import urllib.parse
+
+    from ..api.server import read_runtime
+
+    # --all (or --limit 0) fetches every matching entry; otherwise page by limit.
+    limit = 0 if args.all else args.limit
+    query = {"limit": limit, "offset": args.offset}
     if args.host:
-        path += "&host=%s" % args.host
+        query["host"] = args.host
+
     try:
-        rows = _api_request("GET", path)
+        port, token = read_runtime()
     except FileNotFoundError:
         print("error: no running control API (runtime.json missing)", file=sys.stderr)
         return 1
+
+    url = f"http://127.0.0.1:{port}/history?" + urllib.parse.urlencode(query)
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            rows = json.loads(resp.read())
+            total = int(resp.headers.get("X-Total-Count", len(rows)))
     except urllib.error.HTTPError as exc:
         print(f"error: {exc.code} {exc.read().decode(errors='replace')}", file=sys.stderr)
         return 1
+
     for r in rows:
         print(
             f"{r['id']:>5}  {r['capture_status']:<8} {str(r['status'] or '-'):>3}  "
             f"{r['method']:<6} {r['scheme']}://{r['host']}:{r['port']}{r['url']}  "
             f"[{r['mime_type'] or '-'}]"
         )
-    print(f"({len(rows)} entries)")
+
+    shown_upto = args.offset + len(rows)
+    print(f"({len(rows)} shown of {total} total)")
+    if not args.all and shown_upto < total:
+        remaining = total - shown_upto
+        print(
+            f"  {remaining} more not shown. Use --all, a larger --limit, "
+            f"or --offset {shown_upto} for the next page.",
+            file=sys.stderr,
+        )
     return 0
 
 
@@ -385,7 +409,9 @@ def build_parser() -> argparse.ArgumentParser:
     # history (client)
     p_hist = sub.add_parser("history", help="list captured history via the control API")
     p_hist.add_argument("--host", default=None)
-    p_hist.add_argument("--limit", type=int, default=200)
+    p_hist.add_argument("--limit", type=int, default=200, help="max entries per page (default 200)")
+    p_hist.add_argument("--offset", type=int, default=0, help="skip this many entries (paging)")
+    p_hist.add_argument("--all", action="store_true", help="fetch every matching entry")
     p_hist.set_defaults(func=cmd_history)
 
     return parser

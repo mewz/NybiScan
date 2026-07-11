@@ -55,7 +55,9 @@ nybiscan ca info
 
 # capture proxy (foreground; Ctrl-C or `nybiscan proxy stop` to stop)
 nybiscan proxy start --project /path/to/proj.nybiscan   # default 127.0.0.1:8080
-nybiscan history --limit 50                              # list captured entries
+nybiscan history                                         # list entries (paged, default 200)
+nybiscan history --all                                   # every entry
+nybiscan history --limit 100 --offset 200                # page through
 nybiscan proxy stop
 ```
 

@@ -11,7 +11,7 @@ from __future__ import annotations
 import base64
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 
 from ...core.schemas import HistoryRecord
 from ...core.store import repository
@@ -64,15 +64,21 @@ def _full(rec: HistoryRecord) -> dict:
 
 @router.get("")
 def list_history(
+    response: Response,
     host: Optional[str] = None,
     limit: int = 200,
+    offset: int = 0,
     state: AppState = Depends(require_token),
 ):
+    # limit <= 0 means "all" (SQLite LIMIT -1). X-Total-Count reports how many
+    # rows match the filter so clients know whether more exist beyond this page.
     if state.project is None:
         raise HTTPException(status_code=409, detail="no project open")
+    total = repository.count_history_where(state.project.read_conn, host=host)
     recs = repository.get_history(
-        state.project.read_conn, host=host, limit=limit, ctx=state.project.ctx
+        state.project.read_conn, host=host, limit=limit, offset=offset, ctx=state.project.ctx
     )
+    response.headers["X-Total-Count"] = str(total)
     return [_summary(r) for r in recs]
 
 

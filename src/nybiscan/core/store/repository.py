@@ -253,18 +253,32 @@ def get_history(
     conn,
     host: Optional[str] = None,
     limit: int = 500,
+    offset: int = 0,
     ctx: Optional[StorageContext] = None,
 ) -> List[HistoryRecord]:
+    # SQLite treats LIMIT -1 as "no limit"; map any non-positive limit to that so
+    # callers can request every row (with OFFSET for paging).
+    sql_limit = limit if (limit is not None and limit > 0) else -1
     if host:
         rows = conn.execute(
-            f"SELECT {_SELECT_COLS} FROM history WHERE host = ? ORDER BY id LIMIT ?",
-            (host, limit),
+            f"SELECT {_SELECT_COLS} FROM history WHERE host = ? "
+            "ORDER BY id LIMIT ? OFFSET ?",
+            (host, sql_limit, offset),
         ).fetchall()
     else:
         rows = conn.execute(
-            f"SELECT {_SELECT_COLS} FROM history ORDER BY id LIMIT ?", (limit,)
+            f"SELECT {_SELECT_COLS} FROM history ORDER BY id LIMIT ? OFFSET ?",
+            (sql_limit, offset),
         ).fetchall()
     return [_row_to_record(r, ctx) for r in rows]
+
+
+def count_history_where(conn, host: Optional[str] = None) -> int:
+    if host:
+        return conn.execute(
+            "SELECT count(*) FROM history WHERE host = ?", (host,)
+        ).fetchone()[0]
+    return conn.execute("SELECT count(*) FROM history").fetchone()[0]
 
 
 # ----- scope ----------------------------------------------------------------
