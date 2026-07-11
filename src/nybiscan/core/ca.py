@@ -85,6 +85,20 @@ def resolve_confdir(bundle: Optional[Path]) -> Path:
     return gdir
 
 
+def resolve_existing_confdir(bundle: Optional[Path]) -> Optional[Path]:
+    """Like resolve_confdir but NEVER generates. Returns the CA that would apply
+    (project override, else global), or None if neither exists. For read-only
+    callers (e.g. GET /ca/info) that must not create a CA as a side effect."""
+    if bundle is not None:
+        proj = Path(bundle) / "ca"
+        if ca_exists(proj):
+            return proj
+    gdir = global_ca_dir()
+    if ca_exists(gdir):
+        return gdir
+    return None
+
+
 def import_ca(cert_path: Path, key_path: Path, confdir: Path) -> Path:
     """Import an existing CA (bring your own): write key+cert as mitmproxy-ca.pem.
 

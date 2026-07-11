@@ -163,3 +163,95 @@ stale manual-test step is a bug, not a documentation nicety. Bump the item's
   and subprotocol connections are accepted and then stream entry_created and
   entry_updated events.
 - Verified: Plan 2.5
+
+---
+
+## Plan 3 - macOS Swift/SwiftUI GUI
+
+Run from the repo (repo-dev launch). The GUI spawns the Python core; point it at
+the venv core binary with NYBISCAN_BIN. Build the automated pieces first, then the
+app.
+
+### 3.1 Swift build and unit tests
+- What: the client library and its tests build and pass from the CLI.
+- Command: from gui/, run swift build and swift test.
+- Expected: both succeed; the XCTest suite is green (API client request/decode,
+  runtime.json reader, WebSocket header/subprotocol auth, health poll timeout,
+  history model created-then-updated, core-process spawn errors).
+- Verified: Plan 3
+
+### 3.2 Build and launch the app
+- What: assemble and launch the windowed app; the core spawns and connects.
+- Command: from gui/, run scripts/make_app.sh, then
+  NYBISCAN_BIN="$PWD/../.venv/bin/nybiscan" open NybiScan.app
+  (or run the built binary directly with NYBISCAN_BIN set).
+- Expected: a window appears. The app spawns the core (nybiscan serve), polls
+  `/health`, and reaches the project screen. If NYBISCAN_BIN is wrong, the app
+  shows a clear "could not start the core" error instead of hanging.
+- Verified: Plan 3
+
+### 3.3 First-launch authorized-use gate
+- What: the acknowledgment gates use and persists via the core.
+- Command: on a fresh support dir (unset ack), launch the app; accept the gate.
+  The app reads `/config` on launch and POSTs `/config/acknowledge` on accept.
+- Expected: the authorized-use screen appears when authorized_use_ack is false;
+  after accepting, the app proceeds and does not show the gate again on relaunch
+  (the flag persisted to the core's config.toml).
+- Verified: Plan 3
+
+### 3.4 New, encrypted, and open projects
+- What: project lifecycle via the API.
+- Command: create a new plaintext project (name + location); create a new
+  encrypted project (passphrase); open an existing bundle; try opening an
+  encrypted bundle with the wrong passphrase.
+- Expected: plaintext and encrypted projects create and open; the wrong
+  passphrase surfaces the core's clear error (not a crash); the main window shows
+  the project name.
+- Verified: Plan 3
+
+### 3.5 Live capture streams into the list
+- What: proxied traffic appears live; pending flips to complete.
+- Command: in Options, start the proxy on 127.0.0.1:8080 (`/proxy/start`); with
+  the NybiScan CA trusted (from Plan 2), browse an https site through the proxy.
+- Expected: entries appear in the history list live over the WebSocket; a pending
+  row is visible first and then flips to a completed status with mime/length. The
+  "Live" indicator is green; if the core stops, it shows "Live updates
+  disconnected".
+- Verified: Plan 3
+
+### 3.6 Detail view, pending-aware and body-safe
+- What: full raw request/response render; pending and binary handled.
+- Command: click an entry; also click a still-pending entry and a
+  binary/image entry. The detail loads via `/history/{entry_id}`.
+- Expected: raw request and response headers plus decoded bodies render; a
+  still-pending response shows a waiting state and then populates; a dropped
+  binary body shows a clear "body dropped" note; non-UTF-8 bodies show a hex
+  preview rather than crashing; the UI never blocks while decoding.
+- Verified: Plan 3
+
+### 3.7 Options panel: proxy status and CA info
+- What: read-only status displays via the API.
+- Command: open Options; read proxy status and CA info (`/proxy/status`,
+  `/ca/info`).
+- Expected: proxy status shows running and ssl_insecure false in normal use; CA
+  info shows which CA resolves (project vs global), common name, and fingerprint.
+  No generate/import/export controls this plan.
+- Verified: Plan 3
+
+### 3.8 Quit leaves no orphan
+- What: clean shutdown of the spawned core.
+- Command: quit the app (Cmd-Q) or send it SIGTERM; then
+  pgrep -fl "nybiscan serve".
+- Expected: no orphaned core or mitmproxy process remains. The core received
+  SIGTERM, drained its writer, and checkpointed the WAL.
+- Verified: Plan 3
+
+### 3.9 Thin-client checks (code review)
+- What: confirm the GUI stays a thin client.
+- Command: review gui/Sources. Confirm the only shell-out is spawning the core
+  (CoreProcess) plus lifecycle signals; every app operation (project, history,
+  proxy, config, ca) is a control-API call; runtime.json is read fresh each
+  connect (no cached port); the control-API port is never hardcoded; WebSocket
+  auth uses the header/subprotocol, never a query param.
+- Expected: all hold. No traffic parsing, body filtering, or store access in Swift.
+- Verified: Plan 3

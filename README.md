@@ -11,10 +11,13 @@ detection, exfiltrating data, or attacking out-of-scope hosts, and never will.
 
 ## Status
 
-Plans 1 and 2 are done: the headless Python core and persistence layer, the
-localhost control API, and the in-process mitmproxy-based capture engine with the
-CA lifecycle and a live history WebSocket. No GUI yet (Plan 3). See CLAUDE.md for
-the architecture and the full phased plan, and DECISIONS.md for locked decisions.
+Plans 1, 2, and 3 are done: the headless Python core and persistence layer, the
+localhost control API, the in-process mitmproxy-based capture engine with the CA
+lifecycle and a live history WebSocket, and a native macOS SwiftUI front end (a
+thin client of the control API) with project new/open, a live history list,
+request/response detail, and proxy control. See gui/README.md to build the app,
+CLAUDE.md for the architecture and phased plan, and DECISIONS.md for locked
+decisions.
 
 To intercept https you install and trust the NybiScan CA once (`nybiscan ca
 generate --global`, `nybiscan ca export ...`, then add it to your keychain or

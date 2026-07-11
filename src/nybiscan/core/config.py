@@ -6,6 +6,7 @@ Per-project config lives in the bundle. tomllib (stdlib) reads; tomli_w writes.
 
 from __future__ import annotations
 
+import os
 import tomllib
 from pathlib import Path
 from typing import Any, Dict
@@ -24,8 +25,14 @@ DEFAULT_GLOBAL_CONFIG: Dict[str, Any] = {
 
 
 def app_support_dir() -> Path:
-    """~/Library/Application Support/NybiScan (created on demand)."""
-    d = Path.home() / "Library" / "Application Support" / APP_DIR_NAME
+    """The global app-support directory (created on demand).
+
+    Defaults to ~/Library/Application Support/NybiScan. Overridable via the
+    NYBISCAN_SUPPORT_DIR env var so tests stay hermetic and never clobber the
+    user's real config.toml or runtime.json.
+    """
+    override = os.environ.get("NYBISCAN_SUPPORT_DIR")
+    d = Path(override) if override else Path.home() / "Library" / "Application Support" / APP_DIR_NAME
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -48,6 +55,14 @@ def load_global_config() -> Dict[str, Any]:
 def save_global_config(config: Dict[str, Any]) -> None:
     with global_config_path().open("wb") as f:
         tomli_w.dump(config, f)
+
+
+def set_authorized_use_ack(value: bool = True) -> Dict[str, Any]:
+    """Persist the authorized-use acknowledgment to disk and return the config."""
+    config = load_global_config()
+    config["authorized_use_ack"] = value
+    save_global_config(config)
+    return config
 
 
 # ----- project.toml ---------------------------------------------------------

@@ -112,3 +112,36 @@ Terse log of locked decisions. Newest context lives in CLAUDE.md.
   _IncludedRouter.original_router so the WebSocket route is seen) to check that
   every referenced command/endpoint still exists. Existence only, not behavior.
   No duplicate hardcoded list.
+
+## Locked (Plan 3)
+
+- First native front end is a macOS SwiftUI app under gui/, a SwiftPM package
+  with a testable NybiScanKit library (models, API client, runtime.json reader,
+  WebSocket auth/decode, history model, health poller, core-process supervisor)
+  and a thin NybiScanApp executable (the window). swift build / swift test are
+  CLI-driven. scripts/make_app.sh wraps the built binary in a clickable
+  NybiScan.app (Info.plist + binary); a real distributable .app that locates a
+  bundled Python core is a later concern.
+- Thin client: zero business logic in Swift. The ONLY shell-out is spawning the
+  core (nybiscan serve) plus lifecycle signals to that owned process. Every app
+  operation goes through the control API. runtime.json (port + token) is read
+  fresh on every connect; the control-API port is never cached or hardcoded.
+  WebSocket auth is the Authorization header or the nybiscan Sec-WebSocket-Protocol
+  subprotocol, never a query param.
+- Core supervision: the GUI spawns the core via NYBISCAN_BIN (default the repo
+  venv nybiscan; repo-dev launch only), polls for runtime.json then GET /health.
+  On quit (Cmd-Q via applicationWillTerminate, or SIGTERM/SIGINT via a dispatch
+  signal source), it SIGTERMs the core (drain + WAL checkpoint) and escalates to
+  SIGKILL after a grace period. Verified: no orphaned core after quit.
+- Additive API for the GUI (thin wrappers over existing core, tested):
+  GET /config + POST /config/acknowledge (authorized-use flag, owned by the core,
+  not the client; /config also prefills the options listen fields) and read-only
+  GET /ca/info (which CA resolves, without generating). Core helpers added:
+  ca.resolve_existing_confdir (non-generating) and a NYBISCAN_SUPPORT_DIR env
+  override on config.app_support_dir so config/runtime tests stay hermetic.
+- Options panel scope: interactive proxy start/stop + listen ip/port; read-only
+  proxy status and CA info. Filters, match/replace, and decompress are OMITTED
+  (no backing config state yet; they return when actually configurable).
+- Detail bodies are base64 in the API; the GUI decodes OFF the main thread, caps
+  very large bodies, and falls back to a hex preview for non-UTF-8. Display
+  handling only, not business logic.

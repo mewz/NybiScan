@@ -13,8 +13,10 @@ from nybiscan.core.schemas import (
 
 @pytest.fixture(autouse=True)
 def isolate_ca_home(tmp_path, monkeypatch):
-    """Point the global CA at a per-test temp dir so nothing touches ~/.nybiscan."""
+    """Point the global CA + app-support dir at per-test temp dirs so nothing
+    touches ~/.nybiscan or the user's real config.toml / runtime.json."""
     monkeypatch.setenv("NYBISCAN_CA_DIR", str(tmp_path / "ca-global"))
+    monkeypatch.setenv("NYBISCAN_SUPPORT_DIR", str(tmp_path / "support"))
     # Never allow insecure upstream TLS by default; tests that need it opt in.
     monkeypatch.delenv("NYBISCAN_ALLOW_INSECURE", raising=False)
 

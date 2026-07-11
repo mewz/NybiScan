@@ -8,3 +8,10 @@ dist/
 # local test bundles
 /tmp_*.nybiscan/
 *.nybiscan/
+
+# Swift / SwiftPM (gui)
+gui/.build/
+gui/.swiftpm/
+gui/NybiScan.app/
+**/*.xcodeproj
+DerivedData/
