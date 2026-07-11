@@ -210,24 +210,32 @@ app.
   the project name.
 - Verified: Plan 3
 
-### 3.5 Live capture streams into the list
-- What: proxied traffic appears live; pending flips to complete.
+### 3.5 Live capture streams into the columnar table
+- What: proxied traffic appears live in a spreadsheet-style table; pending flips
+  to complete.
 - Command: in Options, start the proxy on 127.0.0.1:8080 (`/proxy/start`); with
   the NybiScan CA trusted (from Plan 2), browse an https site through the proxy.
-- Expected: entries appear in the history list live over the WebSocket; a pending
-  row is visible first and then flips to a completed status with mime/length. The
-  "Live" indicator is green; if the core stops, it shows "Live updates
-  disconnected".
+- Expected: entries appear live over the WebSocket in a sortable Table with
+  columns #, Host (with a lock icon for https), Method, URL, Status, Length,
+  MIME, Ext, IP, Time. Real metadata is populated; a 304 and a no-extension URL
+  render BLANK cells (not 0/null/broken). Clicking a column header sorts (Status,
+  Method, Host, Time, Length). A pending row is visible first and flips to a
+  completed status with mime/length. The "Live" indicator is green; if the core
+  stops it shows "Live updates disconnected". Under busy capture the table stays
+  responsive (throttled re-sort) and a selected row does not jump while new rows
+  stream in.
 - Verified: Plan 3
 
-### 3.6 Detail view, pending-aware and body-safe
-- What: full raw request/response render; pending and binary handled.
-- Command: click an entry; also click a still-pending entry and a
-  binary/image entry. The detail loads via `/history/{entry_id}`.
-- Expected: raw request and response headers plus decoded bodies render; a
-  still-pending response shows a waiting state and then populates; a dropped
-  binary body shows a clear "body dropped" note; non-UTF-8 bodies show a hex
-  preview rather than crashing; the UI never blocks while decoding.
+### 3.6 Tabbed detail, pending-aware and body-safe
+- What: a tabbed Request/Response detail renders; pending and binary handled.
+- Command: click a row; use the Request and Response tabs. Also click a
+  still-pending entry and a binary/image entry. The detail loads via
+  `/history/{entry_id}`.
+- Expected: the detail shows a Request tab and a Response tab, each with raw
+  headers plus the decoded body. A still-pending Response tab shows a waiting
+  state and then populates; a dropped binary body shows a clear "body dropped"
+  note; non-UTF-8 bodies show a hex preview rather than crashing; the UI never
+  blocks while decoding.
 - Verified: Plan 3
 
 ### 3.7 Options panel: proxy status and CA info

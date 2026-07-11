@@ -71,6 +71,7 @@ public struct HistorySummary: Codable, Sendable, Equatable, Identifiable {
     public let port: Int
     public let method: String
     public let url: String
+    public let `extension`: String?  // Swift keyword; core-derived file extension
     public let status: Int?
     public let mimeType: String?
     public let respLength: Int
@@ -81,8 +82,8 @@ public struct HistorySummary: Codable, Sendable, Equatable, Identifiable {
 
     public init(
         id: Int, flowId: String?, scheme: String, host: String, port: Int,
-        method: String, url: String, status: Int?, mimeType: String?,
-        respLength: Int, remoteIp: String?, captureStatus: String,
+        method: String, url: String, `extension`: String?, status: Int?,
+        mimeType: String?, respLength: Int, remoteIp: String?, captureStatus: String,
         reqStartTs: Int, respCompleteTs: Int?
     ) {
         self.id = id
@@ -92,6 +93,7 @@ public struct HistorySummary: Codable, Sendable, Equatable, Identifiable {
         self.port = port
         self.method = method
         self.url = url
+        self.`extension` = `extension`
         self.status = status
         self.mimeType = mimeType
         self.respLength = respLength
@@ -102,12 +104,12 @@ public struct HistorySummary: Codable, Sendable, Equatable, Identifiable {
     }
 
     /// A lightweight placeholder row built from an entry_created event, which
-    /// carries only a subset of fields (no mime/length/timestamps yet).
+    /// carries only a subset of fields (no mime/length/extension/timestamps yet).
     public static func pending(from event: HistoryEvent) -> HistorySummary {
         HistorySummary(
             id: event.id, flowId: event.flowId, scheme: "", host: event.host,
-            port: 0, method: event.method, url: event.url, status: event.status,
-            mimeType: nil, respLength: 0, remoteIp: nil,
+            port: 0, method: event.method, url: event.url, extension: nil,
+            status: event.status, mimeType: nil, respLength: 0, remoteIp: nil,
             captureStatus: event.captureStatus, reqStartTs: 0, respCompleteTs: nil
         )
     }
@@ -115,6 +117,15 @@ public struct HistorySummary: Codable, Sendable, Equatable, Identifiable {
     public var hostDisplay: String {
         scheme.isEmpty ? host : "\(scheme)://\(host):\(port)"
     }
+
+    /// Client-side display derivation (thin-client rule): does the URL carry a
+    /// query string. Trivial, nothing downstream queries it, so no core field.
+    public var hasParams: Bool { url.contains("?") }
+
+    /// Sortable status key (Optional is not Comparable): pending/no-status sorts low.
+    public var statusSort: Int { status ?? -1 }
+
+    public var isSecure: Bool { scheme == "https" }
 }
 
 public struct HistoryDetail: Codable, Sendable, Equatable {
@@ -125,6 +136,7 @@ public struct HistoryDetail: Codable, Sendable, Equatable {
     public let port: Int
     public let method: String
     public let url: String
+    public let `extension`: String?
     public let status: Int?
     public let mimeType: String?
     public let respLength: Int
@@ -145,9 +157,9 @@ public struct HistoryDetail: Codable, Sendable, Equatable {
     public var summary: HistorySummary {
         HistorySummary(
             id: id, flowId: flowId, scheme: scheme, host: host, port: port,
-            method: method, url: url, status: status, mimeType: mimeType,
-            respLength: respLength, remoteIp: remoteIp, captureStatus: captureStatus,
-            reqStartTs: reqStartTs, respCompleteTs: respCompleteTs
+            method: method, url: url, extension: `extension`, status: status,
+            mimeType: mimeType, respLength: respLength, remoteIp: remoteIp,
+            captureStatus: captureStatus, reqStartTs: reqStartTs, respCompleteTs: respCompleteTs
         )
     }
 }

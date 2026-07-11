@@ -30,6 +30,7 @@ def _summary(rec: HistoryRecord) -> dict:
         "port": rec.port,
         "method": rec.method,
         "url": rec.url,
+        "extension": rec.extension,
         "status": rec.status,
         "mime_type": rec.mime_type,
         "resp_length": rec.resp_length,

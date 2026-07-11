@@ -48,6 +48,30 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(rows[0].captureStatus, "complete")
     }
 
+    func testDecodesExtensionAndDerivesHasParams() async throws {
+        StubURLProtocol.responder = { _ in
+            (200, Data("""
+            [{"id":1,"flow_id":"f1","scheme":"https","host":"ex.com","port":443,
+              "method":"GET","url":"/app.min.js?v=3","extension":"js","status":200,
+              "mime_type":"application/javascript","resp_length":9,"remote_ip":"1.2.3.4",
+              "capture_status":"complete","req_start_ts":1000,"resp_complete_ts":1100},
+             {"id":2,"flow_id":"f2","scheme":"https","host":"ex.com","port":443,
+              "method":"GET","url":"/api/users","extension":null,"status":200,
+              "mime_type":"application/json","resp_length":2,"remote_ip":"1.2.3.4",
+              "capture_status":"complete","req_start_ts":1000,"resp_complete_ts":1100}]
+            """.utf8))
+        }
+        let rows = try await makeClient().history()
+        // Assert the VALUE (a mismatched key would silently decode nil).
+        XCTAssertEqual(rows[0].extension, "js")
+        XCTAssertNil(rows[1].extension)
+        // has_params is a client-side derivation, not from the payload.
+        XCTAssertTrue(rows[0].hasParams)   // /app.min.js?v=3
+        XCTAssertFalse(rows[1].hasParams)  // /api/users
+        // statusSort makes the Optional status sortable.
+        XCTAssertEqual(rows[0].statusSort, 200)
+    }
+
     func testDecodesHistoryDetail() async throws {
         StubURLProtocol.responder = { _ in
             (200, Data("""

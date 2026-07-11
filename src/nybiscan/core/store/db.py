@@ -17,7 +17,7 @@ from typing import Optional
 
 from ..errors import WrongPassphraseError
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 _HISTORY_COLUMNS = (
     "flow_id",
@@ -26,6 +26,7 @@ _HISTORY_COLUMNS = (
     "port",
     "method",
     "url",
+    "extension",
     "req_headers_raw",
     "req_mime_type",
     "req_body",
@@ -47,13 +48,18 @@ _HISTORY_COLUMNS = (
     "capture_status",
 )
 
-# Columns added in schema v2, applied to a v1 db by migrate(). Each entry is
-# (column_name, column_type) matching the CREATE TABLE definitions below.
+# Columns added after schema v1, applied to an older db by migrate(). Each entry
+# is (column_name, column_type) matching the CREATE TABLE definitions below.
+# migrate() adds any that are missing, so a v1 OR v2 db reaches the current
+# version in one pass. Order does not matter (ALTER appends physically; reads go
+# by name via _HISTORY_COLUMNS).
 _V2_COLUMNS = (
     ("flow_id", "TEXT"),
     ("req_content_encoding", "TEXT"),
     ("resp_content_encoding", "TEXT"),
 )
+_V3_COLUMNS = (("extension", "TEXT"),)
+_MIGRATION_COLUMNS = _V2_COLUMNS + _V3_COLUMNS
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -69,6 +75,7 @@ CREATE TABLE IF NOT EXISTS history (
     port                  INTEGER NOT NULL,
     method                TEXT    NOT NULL,
     url                   TEXT    NOT NULL,
+    extension             TEXT,
     req_headers_raw       TEXT    NOT NULL DEFAULT '',
     req_mime_type         TEXT,
     req_body              BLOB,
@@ -171,11 +178,13 @@ def _schema_version(conn) -> int:
 
 
 def migrate(conn) -> None:
-    """Bring a v1 database up to v2. Transactional and idempotent.
+    """Bring an older database up to the current schema. Transactional + idempotent.
 
-    Adds the v2 columns and flow_id index, then bumps schema_version, all in one
-    transaction so a crash mid-migration cannot leave a half-v2 db. Re-running on
-    a v2 db is a no-op. Safe under SQLCipher (the key is already set on conn).
+    Adds ANY missing post-v1 column (only the ones absent, so a v1 or a v2 db
+    reaches the current version in one pass without a duplicate-column error),
+    ensures the flow_id index, then bumps schema_version, all in one transaction
+    so a crash mid-migration cannot leave a half-migrated db. Re-running on a
+    current db is a no-op. Safe under SQLCipher (the key is already set on conn).
     """
     if _schema_version(conn) >= SCHEMA_VERSION:
         return
@@ -183,7 +192,7 @@ def migrate(conn) -> None:
     existing = _existing_columns(conn)
     conn.execute("BEGIN")
     try:
-        for name, coltype in _V2_COLUMNS:
+        for name, coltype in _MIGRATION_COLUMNS:
             if name not in existing:
                 conn.execute(f"ALTER TABLE history ADD COLUMN {name} {coltype}")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_history_flow_id ON history(flow_id)")

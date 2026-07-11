@@ -77,8 +77,8 @@ final class HistoryModelTests: XCTestCase {
         // entry_updated -> the app refetches the full row and upserts it
         let full = HistorySummary(
             id: 1, flowId: "f1", scheme: "https", host: "h", port: 443, method: "GET",
-            url: "/u1", status: 200, mimeType: "text/html", respLength: 10, remoteIp: "1.1.1.1",
-            captureStatus: "complete", reqStartTs: 5, respCompleteTs: 6
+            url: "/u1", extension: nil, status: 200, mimeType: "text/html", respLength: 10,
+            remoteIp: "1.1.1.1", captureStatus: "complete", reqStartTs: 5, respCompleteTs: 6
         )
         model.upsert(full)
         XCTAssertEqual(model.entries.count, 1)  // still one row (replaced, not duplicated)
@@ -90,8 +90,8 @@ final class HistoryModelTests: XCTestCase {
     func testBackfillThenLiveKeepsSortedUniqueRows() {
         var model = HistoryModel([
             HistorySummary(id: 1, flowId: "f1", scheme: "http", host: "h", port: 80, method: "GET",
-                           url: "/1", status: 200, mimeType: nil, respLength: 0, remoteIp: nil,
-                           captureStatus: "complete", reqStartTs: 1, respCompleteTs: 2),
+                           url: "/1", extension: nil, status: 200, mimeType: nil, respLength: 0,
+                           remoteIp: nil, captureStatus: "complete", reqStartTs: 1, respCompleteTs: 2),
         ])
         model.insertPending(from: event("entry_created", id: 2, status: nil, cap: "pending"))
         // a duplicate created for an existing id must not add a second row

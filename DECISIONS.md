@@ -160,7 +160,39 @@ Terse log of locked decisions. Newest context lives in CLAUDE.md.
   binary was located and launched). Standalone self-contained bundling (no repo
   `.venv`) is deferred to a later packaging plan.
 
+## Locked (Plan 3 addendum: columnar history + tabbed detail)
+
+- Core-vs-client derivation principle: a field lives in CORE if a second thin
+  client would have to reimplement logic to match it (define once, all clients
+  read the same value); it may live in the CLIENT if a second client would
+  trivially re-derive it as pure display.
+- `extension` (file extension parsed from the URL path) is CORE: real parsing edge
+  cases (query-strip, last-segment-only, dotfiles, empty candidate, numeric
+  version/date rejection, length cap) defined once in `capture.parse_extension`,
+  stored on the record, exposed in `/history`. Plan 5 spider / Plan 6 MCP will
+  query it. Schema v2 -> v3 adds the `extension` column; `migrate()` generalized
+  to add any missing post-v1 column (tested v1->v3 and v2->v3, plaintext and
+  encrypted-through-cipher).
+- `has_params` (URL has a query string) is CLIENT-derived (Swift `hasParams`);
+  trivial display, nothing downstream queries it, no core column. `isSecure`
+  (https) and `statusSort` (Optional status made sortable) are likewise
+  client-only display derivations.
+- History list is a sortable SwiftUI Table; re-sort is throttled (not per WS
+  event) and selection is bound to a stable entry id so an open detail does not
+  jump while rows stream. Legitimately-empty fields render blank.
+- The request/response detail is a REUSABLE `RequestResponseView` (Request /
+  Response tabs, Raw only) built with an `editable` flag reserved so Plan 4 Bench
+  reuses the same component with an editable Request tab.
+
 ## Backlog (deferred, do not build yet)
+
+- Binary-in-history VIEW FILTER (hide binary/image/css rows like Burp's filter
+  bar): needs a display-filter (hide but still capture/store) vs capture-filter
+  (do not record) decision. Lands with the editable-filters options UI.
+- History columns/detail deferred: Comment (needs a write surface + storage),
+  Edited (only meaningful once Bench exists), Cookies (Plan 5 session work),
+  Headers/Hex detail sub-tabs (Raw only for now), and any request editing in the
+  detail (that is Bench, Plan 4).
 
 - Plan 3.5: a root Makefile (`make setup` creates `.venv` at the exact
   path/name; `make test` runs pytest + swift test; `make build` runs swift build +

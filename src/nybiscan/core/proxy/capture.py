@@ -42,6 +42,32 @@ def _safe_content(message) -> Optional[bytes]:
         return None
 
 
+def parse_extension(url: str) -> Optional[str]:
+    """Parse a file extension from a URL path.
+
+    Rules (defined once in core so every client matches):
+    - strip the query and fragment first (/foo.php?x=1 -> php);
+    - only the LAST path segment is considered (/api/v2.1/users -> None);
+    - a dotfile has no basename before the dot (/.htaccess -> None);
+    - an empty candidate after the dot is rejected (/file. -> None);
+    - purely numeric candidates are versions/dates, not extensions
+      (/api/v2.1 -> None, /backup.2024 -> None);
+    - accept only short alphanumeric candidates (1..10 chars), lowercased.
+    """
+    path = url.split("?", 1)[0].split("#", 1)[0]
+    segment = path.rsplit("/", 1)[-1]
+    if "." not in segment:
+        return None
+    base, _dot, candidate = segment.rpartition(".")
+    if not base or not candidate:
+        return None
+    if not candidate.isalnum() or len(candidate) > 10:
+        return None
+    if candidate.isdigit():
+        return None
+    return candidate.lower()
+
+
 def _remote_ip(flow) -> Optional[str]:
     # peername is legitimately absent on flows that errored before connecting.
     peer = getattr(flow.server_conn, "peername", None)
@@ -60,6 +86,7 @@ def record_from_request(flow) -> HistoryRecord:
         port=req.port,
         method=req.method,
         url=req.path,
+        extension=parse_extension(req.path),
         req_headers_raw=_headers_blob(first_line, req.headers),
         req_mime_type=_mime(req.headers),
         req_body=_safe_content(req),

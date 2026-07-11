@@ -96,7 +96,9 @@ hermetic and never touch the real user config or CA.
    NybiScanKit library + thin NybiScanApp window). Thin client over the control
    API: project new/open, live history (backfill + WebSocket), pending-aware
    detail, options (proxy control + read-only status/CA info). Added additive API
-   GET/POST /config and GET /ca/info. NEXT is Plan 4.
+   GET/POST /config and GET /ca/info. Addendum completed the history UI: a
+   core-derived `extension` field (schema v3), a sortable columnar Table, and a
+   reusable tabbed Request/Response detail (for Plan 4 Bench reuse). NEXT is Plan 4.
 4. Bench (replay) + match/replace + decompress.
 5. Dashboard site map + scoped spider.
 6. MCP server over the core.
