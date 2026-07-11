@@ -21,33 +21,44 @@ phased plan, and DECISIONS.md for locked decisions.
 ## Requirements
 
 - macOS with a Swift toolchain (Xcode) to build the GUI.
-- Python 3.11+ for the core.
+- Python 3.12+ for the core (built and verified on 3.12).
 - The GUI is currently a DEVELOPER artifact launched from the cloned repo. It is
   not yet a standalone distributable app (self-contained bundling, code-signing,
   and notarization are a later packaging plan).
 
-## Running the app
+## Running the macOS GUI app
 
-The GUI spawns the Python core and then drives everything over the control API.
-It locates the core by walking up from its executable to `<repo>/.venv/bin/nybiscan`,
-so a Python environment MUST exist at the repo root named EXACTLY `.venv`. The
-name and location matter.
+NybiScan.app is a developer artifact launched from the cloned repo. The GUI spawns
+the Python core and then drives everything over the control API. It locates the
+core by walking up from its executable to `<repo>/.venv/bin/nybiscan`, so a Python
+environment MUST exist at the repo root named EXACTLY `.venv`. The name and
+location matter.
 
-From a fresh clone:
+First, set up the core environment once (from the repo root):
 
 ```
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
+```
+
+Build the app:
+
+```
 cd gui && ./scripts/make_app.sh
+```
+
+Launch it:
+
+```
 open NybiScan.app
 ```
 
 `scripts/make_app.sh` builds the Swift executable and wraps it in a clickable
 `NybiScan.app` (Info.plist + binary). If the app reports "NybiScan core not
 found", the `.venv` is missing or misnamed at the repo root; create it with the
-commands above. (A `make setup` convenience layer is planned for a later pass; it
-does not exist yet.)
+setup commands above. (A `make setup` convenience layer is planned for a later
+pass; it does not exist yet.)
 
 ## Architecture
 
@@ -60,12 +71,11 @@ does not exist yet.)
   spawns the core once, then drives project/history/proxy/config over HTTP +
   WebSocket. It holds no business logic (no traffic parsing, body filtering, or
   store access). Split into a testable `NybiScanKit` library and a `NybiScanApp`
-  window; `swift build` and `swift test` run from `gui/`.
+  window.
 
-To intercept https you install and trust the NybiScan CA once (see the CA commands
-below), then add it to your keychain or browser. The capture proxy and the control
-API are separate listeners on separate ports; only the control API is
-bearer-token authenticated.
+To intercept https you install and trust the NybiScan CA once (see "Trusting the
+CA" below). The capture proxy and the control API are separate listeners on
+separate ports; only the control API is bearer-token authenticated.
 
 ## Tests
 
@@ -101,3 +111,22 @@ nybiscan proxy stop
 
 An encrypted project cannot be recovered without its passphrase. There is no
 backdoor.
+
+## Trusting the CA (for https interception)
+
+After exporting the public cert (`nybiscan ca export /tmp/nybiscan-ca.crt`), trust
+it so your browser accepts the intercepted TLS. Only the public cert is trusted;
+the private key never leaves `~/.nybiscan/ca`.
+
+```
+# macOS login keychain (per user; may prompt for your password)
+security add-trusted-cert -r trustRoot \
+  -k ~/Library/Keychains/login.keychain-db /tmp/nybiscan-ca.crt
+```
+
+For system-wide trust instead, run it with sudo against the System keychain:
+`sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain /tmp/nybiscan-ca.crt`.
+
+Firefox uses its own trust store, not the system keychain. In Firefox, import the
+same `/tmp/nybiscan-ca.crt` via Settings -> Privacy & Security -> Certificates ->
+View Certificates -> Authorities -> Import, and trust it to identify websites.
