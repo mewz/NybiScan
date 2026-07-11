@@ -184,6 +184,24 @@ Terse log of locked decisions. Newest context lives in CLAUDE.md.
   Response tabs, Raw only) built with an `editable` flag reserved so Plan 4 Bench
   reuses the same component with an editable Request tab.
 
+## Locked (Plan 3 layout addendum)
+
+- The history UI is a vertical (top/bottom) split (`VSplitView`): the table spans
+  the full window width on top, the detail spans the full width below. This is a
+  data-table + inspector model, not a navigation master-detail sidebar.
+- The detail pane is ALWAYS present (stable layout), blank when nothing is
+  selected. The vertical divider drags freely and both panes collapse to a sliver
+  at both extremes (no tall minimum blocks the scan-then-read workflow). Divider
+  position is stable across row selection within a session.
+- Column widths are by importance/content: Host has a hard min floor (~220pt) that
+  fits a full https domain before truncating; Host and URL flex to absorb extra
+  window width; MIME/IP/Time are medium-fixed (fit application/javascript,
+  255.255.255.255, the timestamp); Method/Status/Length/Ext/# are narrow fixed and
+  never steal width from Host/URL.
+- Deferred: column REORDERING (drag to rearrange), and cross-launch PERSISTENCE of
+  divider position and column widths. Within-session stability is the requirement;
+  cross-launch is a later pass.
+
 ## Backlog (deferred, do not build yet)
 
 - Binary-in-history VIEW FILTER (hide binary/image/css rows like Burp's filter

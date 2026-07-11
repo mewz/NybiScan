@@ -215,27 +215,44 @@ app.
   to complete.
 - Command: in Options, start the proxy on 127.0.0.1:8080 (`/proxy/start`); with
   the NybiScan CA trusted (from Plan 2), browse an https site through the proxy.
-- Expected: entries appear live over the WebSocket in a sortable Table with
-  columns #, Host (with a lock icon for https), Method, URL, Status, Length,
-  MIME, Ext, IP, Time. Real metadata is populated; a 304 and a no-extension URL
-  render BLANK cells (not 0/null/broken). Clicking a column header sorts (Status,
-  Method, Host, Time, Length). A pending row is visible first and flips to a
-  completed status with mime/length. The "Live" indicator is green; if the core
-  stops it shows "Live updates disconnected". Under busy capture the table stays
-  responsive (throttled re-sort) and a selected row does not jump while new rows
-  stream in.
+- Expected: the history table spans the FULL window width (top pane). Entries
+  appear live over the WebSocket in a sortable Table with columns #, Host (with a
+  lock icon for https), Method, URL, Status, Length, MIME, Ext, IP, Time. Host is
+  wide enough to show at least `https://www.something.com` without clipping and
+  URL/MIME are readable, while narrow columns (Status, Ext, Length, Method) stay
+  tight. Real metadata is populated; a 304 and a no-extension URL render BLANK
+  cells (not 0/null/broken). Clicking a column header sorts (Status, Method, Host,
+  Time, Length). A pending row is visible first and flips to a completed status
+  with mime/length. The "Live" indicator is green; if the core stops it shows
+  "Live updates disconnected". Under busy capture the table stays responsive
+  (throttled re-sort) and a selected row does not jump while new rows stream in.
 - Verified: Plan 3
 
 ### 3.6 Tabbed detail, pending-aware and body-safe
-- What: a tabbed Request/Response detail renders; pending and binary handled.
+- What: a tabbed Request/Response detail renders below the table; pending and
+  binary handled.
 - Command: click a row; use the Request and Response tabs. Also click a
   still-pending entry and a binary/image entry. The detail loads via
   `/history/{entry_id}`.
-- Expected: the detail shows a Request tab and a Response tab, each with raw
-  headers plus the decoded body. A still-pending Response tab shows a waiting
+- Expected: the detail sits FULL WIDTH BELOW the table (bottom pane) and is blank
+  when nothing is selected. It shows a Request tab and a Response tab, each with
+  raw headers plus the decoded body. A still-pending Response tab shows a waiting
   state and then populates; a dropped binary body shows a clear "body dropped"
   note; non-UTF-8 bodies show a hex preview rather than crashing; the UI never
   blocks while decoding.
+- Verified: Plan 3
+
+### 3.10 Vertical layout and collapsible divider
+- What: the table/detail split is top/bottom with a draggable, collapsible
+  divider.
+- Command: drag the divider between the table (top) and detail (bottom) up and
+  down. Click different rows while the divider is off-center.
+- Expected: the divider drags freely up and down. The detail can be squashed to a
+  sliver (table takes almost the whole window while scanning) AND expanded large
+  (detail takes most of the window while reading); neither pane imposes a tall
+  minimum that blocks this. The divider position holds across clicking different
+  rows (it does not reset to 50/50). (Cross-launch persistence of the divider and
+  column widths is deferred.)
 - Verified: Plan 3
 
 ### 3.7 Options panel: proxy status and CA info
