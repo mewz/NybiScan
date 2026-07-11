@@ -21,7 +21,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "httpx"]
+# httpx2 (Pydantic-maintained successor to httpx, github.com/pydantic/httpx2) is
+# what starlette.testclient now uses; installing it avoids the deprecated httpx
+# fallback path. We only touch an http client via TestClient.
+dev = ["pytest", "httpx2"]
 
 [project.scripts]
 nybiscan = "nybiscan.cli.__main__:main"
