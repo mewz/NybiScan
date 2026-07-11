@@ -182,12 +182,13 @@ app.
 
 ### 3.2 Build and launch the app
 - What: assemble and launch the windowed app; the core spawns and connects.
-- Command: from gui/, run scripts/make_app.sh, then
-  NYBISCAN_BIN="$PWD/../.venv/bin/nybiscan" open NybiScan.app
-  (or run the built binary directly with NYBISCAN_BIN set).
-- Expected: a window appears. The app spawns the core (nybiscan serve), polls
-  `/health`, and reaches the project screen. If NYBISCAN_BIN is wrong, the app
-  shows a clear "could not start the core" error instead of hanging.
+- Command: from gui/, run scripts/make_app.sh, then open NybiScan.app. From the
+  repo the app finds ../.venv/bin/nybiscan automatically (no env needed); if you
+  move the .app out of the repo, set NYBISCAN_BIN to the nybiscan binary.
+- Expected: a window appears. The app clears any stale runtime.json, spawns the
+  core (nybiscan serve), polls `/health`, and reaches the project screen. If the
+  core binary cannot be found, the app shows a clear "could not start the core"
+  error instead of hanging.
 - Verified: Plan 3
 
 ### 3.3 First-launch authorized-use gate

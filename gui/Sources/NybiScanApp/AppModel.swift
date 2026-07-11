@@ -37,6 +37,14 @@ final class AppModel: ObservableObject {
 
     func start() async {
         phase = .starting
+
+        // Remove any stale runtime.json (from a previous core / manual `serve`)
+        // BEFORE spawning, so we only ever connect to the port + token our own
+        // freshly spawned core writes. A stale file points at a dead port and
+        // would make health time out.
+        let runtimeURL = RuntimeInfoReader.defaultURL()
+        try? FileManager.default.removeItem(at: runtimeURL)
+
         let proc = CoreProcess()
         do {
             try proc.start()
@@ -46,8 +54,8 @@ final class AppModel: ObservableObject {
         }
         core = proc
 
-        guard let info = await HealthPoller.waitForRuntimeInfo(timeoutSeconds: 10) else {
-            phase = .error("The core did not write runtime.json within 10s.")
+        guard let info = await HealthPoller.waitForRuntimeInfo(url: runtimeURL, timeoutSeconds: 10) else {
+            phase = .error("The core did not write runtime.json within 10s (binary: \(proc.binPath)).")
             return
         }
         let c = ControlAPIClient(port: info.port, token: info.token, session: apiSession)

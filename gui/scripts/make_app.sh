@@ -34,4 +34,6 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 PLIST
 
 echo "Built $APP"
-echo "Run: open $APP   (set NYBISCAN_BIN if the core is not at ./.venv/bin/nybiscan)"
+echo "Run: open $APP"
+echo "  (from the repo it finds ../.venv/bin/nybiscan automatically; if you move"
+echo "   the .app out of the repo, set NYBISCAN_BIN to the nybiscan binary.)"
