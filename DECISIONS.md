@@ -145,3 +145,28 @@ Terse log of locked decisions. Newest context lives in CLAUDE.md.
 - Detail bodies are base64 in the API; the GUI decodes OFF the main thread, caps
   very large bodies, and falls back to a hex preview for non-UTF-8. Display
   handling only, not business logic.
+
+## Locked (Plan 3 cleanup)
+
+- ONE project README at the repo root owns the whole story (both toolchains, core
+  + GUI relationship, run/launch). gui/README.md is reduced to a one-line pointer;
+  no per-directory README duplicates content.
+- Launch contract: NybiScan.app is a DEVELOPER artifact launched from the cloned
+  repo. It REQUIRES a Python environment at the repo root named exactly `.venv`;
+  the app locates the core by walking up to `<repo>/.venv/bin/nybiscan`. When the
+  core binary cannot be located, the app fails fast with an ACTIONABLE error
+  (CoreProcess.notFoundMessage) naming the expected `.venv` path and the setup
+  commands, distinct from the health-timeout message (which only fires after the
+  binary was located and launched). Standalone self-contained bundling (no repo
+  `.venv`) is deferred to a later packaging plan.
+
+## Backlog (deferred, do not build yet)
+
+- Plan 3.5: a root Makefile (`make setup` creates `.venv` at the exact
+  path/name; `make test` runs pytest + swift test; `make build` runs swift build +
+  make_app.sh; `make run` launches), a build-architecture diagram in the README,
+  and extending the grep-guard to check that README make-targets exist in the
+  Makefile. Until then, do NOT document Makefile targets as usable.
+- Packaging plan: bundle Python + core + SQLCipher into NybiScan.app
+  (self-contained, no repo `.venv`), code-sign + notarize, so the app launches
+  outside the repo by double-click.

@@ -114,4 +114,15 @@ final class CoreProcessTests: XCTestCase {
             XCTAssertEqual(err as? CoreProcessError, .binaryNotFound("/definitely/not/here/nybiscan"))
         }
     }
+
+    func testNotFoundMessageIsActionable() {
+        let msg = CoreProcess.notFoundMessage(binPath: "/Users/x/NybiScan/.venv/bin/nybiscan")
+        // Names the exact expected .venv path...
+        XCTAssertTrue(msg.contains("/Users/x/NybiScan/.venv"))
+        // ...and the exact fix commands.
+        XCTAssertTrue(msg.contains("python3 -m venv .venv"))
+        XCTAssertTrue(msg.contains("pip install -e"))
+        // ...and does not masquerade as a health-timeout.
+        XCTAssertFalse(msg.lowercased().contains("healthy"))
+    }
 }

@@ -48,14 +48,21 @@ final class AppModel: ObservableObject {
         let proc = CoreProcess()
         do {
             try proc.start()
+        } catch CoreProcessError.binaryNotFound {
+            // Missing/misnamed repo .venv: a loud, actionable error, not the
+            // generic health-timeout symptom.
+            phase = .error(CoreProcess.notFoundMessage(binPath: proc.binPath))
+            return
         } catch {
-            phase = .error("Could not start the core at \(proc.binPath). Set NYBISCAN_BIN to the nybiscan binary. (\(error))")
+            phase = .error("Could not start the core (\(proc.binPath)): \(error)")
             return
         }
         core = proc
 
+        // From here the binary was located and launched; any failure below is a
+        // health/startup problem, not a missing core.
         guard let info = await HealthPoller.waitForRuntimeInfo(url: runtimeURL, timeoutSeconds: 10) else {
-            phase = .error("The core did not write runtime.json within 10s (binary: \(proc.binPath)).")
+            phase = .error("The core was launched but did not write runtime.json within 10s (binary: \(proc.binPath)).")
             return
         }
         let c = ControlAPIClient(port: info.port, token: info.token, session: apiSession)

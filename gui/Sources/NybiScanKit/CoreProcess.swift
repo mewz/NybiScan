@@ -43,6 +43,22 @@ public final class CoreProcess {
     public var isRunning: Bool { process.isRunning }
     public var pid: Int32 { process.processIdentifier }
 
+    /// Actionable message when the core binary cannot be located, naming the exact
+    /// expected `.venv` and the exact fix. Used instead of the opaque
+    /// health-timeout symptom so a missing/misnamed repo `.venv` is obvious.
+    public static func notFoundMessage(binPath: String) -> String {
+        // binPath is <root>/.venv/bin/nybiscan; the venv is two levels up.
+        let bin = binPath as NSString
+        let venv = (bin.deletingLastPathComponent as NSString).deletingLastPathComponent
+        return """
+        NybiScan core not found. Expected a Python environment at \(venv).
+
+        From the repo root, run:
+          python3 -m venv .venv && source .venv/bin/activate && pip install -e '.[dev]'
+        (a `make setup` shortcut is coming in a later plan), then relaunch NybiScan.app.
+        """
+    }
+
     public func start() throws {
         guard FileManager.default.isExecutableFile(atPath: binPath) else {
             throw CoreProcessError.binaryNotFound(binPath)
