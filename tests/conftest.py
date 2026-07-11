@@ -12,6 +12,14 @@ from nybiscan.core.schemas import (
 
 
 @pytest.fixture(autouse=True)
+def isolate_ca_home(tmp_path, monkeypatch):
+    """Point the global CA at a per-test temp dir so nothing touches ~/.nybiscan."""
+    monkeypatch.setenv("NYBISCAN_CA_DIR", str(tmp_path / "ca-global"))
+    # Never allow insecure upstream TLS by default; tests that need it opt in.
+    monkeypatch.delenv("NYBISCAN_ALLOW_INSECURE", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def fast_kdf(monkeypatch):
     """Shrink Argon2id cost for tests. Real defaults are used in production."""
     import secrets

@@ -76,6 +76,7 @@ def _record_to_row(rec: HistoryRecord, ctx: StorageContext) -> tuple:
         rec.resp_body, rec.mime_type, ctx
     )
     return (
+        rec.flow_id,
         rec.scheme,
         rec.host,
         rec.port,
@@ -87,6 +88,7 @@ def _record_to_row(rec: HistoryRecord, ctx: StorageContext) -> tuple:
         req_ref,
         int(req_dropped),
         req_len or rec.req_length,
+        rec.req_content_encoding,
         rec.req_start_ts,
         rec.status,
         resp_len or rec.resp_length,
@@ -96,6 +98,7 @@ def _record_to_row(rec: HistoryRecord, ctx: StorageContext) -> tuple:
         resp_blob,
         resp_ref,
         int(resp_dropped),
+        rec.resp_content_encoding,
         rec.resp_complete_ts,
         rec.capture_status.value,
     )
@@ -109,12 +112,71 @@ def insert_history_batch(conn, records: List[HistoryRecord], ctx: StorageContext
     conn.executemany(_SITE_SQL, site_rows)
 
 
+_UPDATE_RESPONSE_SQL = """
+UPDATE history SET
+    status = ?, resp_length = ?, mime_type = ?, remote_ip = ?, resp_headers_raw = ?,
+    resp_body = ?, resp_body_ref = ?, resp_body_dropped = ?, resp_content_encoding = ?,
+    resp_complete_ts = ?, capture_status = ?
+WHERE flow_id = ?
+"""
+
+
+def update_response_by_flow(conn, flow_id: str, patch: HistoryRecord, ctx: StorageContext) -> None:
+    """Apply a response (pending -> complete) to the row with this flow_id."""
+    resp_blob, resp_ref, resp_dropped, resp_len = filters.prepare_body(
+        patch.resp_body, patch.mime_type, ctx
+    )
+    conn.execute(
+        _UPDATE_RESPONSE_SQL,
+        (
+            patch.status,
+            resp_len or patch.resp_length,
+            patch.mime_type,
+            patch.remote_ip,
+            patch.resp_headers_raw,
+            resp_blob,
+            resp_ref,
+            int(resp_dropped),
+            patch.resp_content_encoding,
+            patch.resp_complete_ts,
+            patch.capture_status.value,
+            flow_id,
+        ),
+    )
+
+
+def set_capture_status_by_flow(conn, flow_id: str, status: CaptureStatus) -> None:
+    """Flip capture_status for a flow (e.g. pending -> error) without touching bodies."""
+    conn.execute(
+        "UPDATE history SET capture_status = ? WHERE flow_id = ?",
+        (status.value, flow_id),
+    )
+
+
+def mark_pending_interrupted(conn) -> int:
+    """On open, any leftover pending rows are from a prior hard kill: mark error."""
+    cur = conn.execute(
+        "UPDATE history SET capture_status = 'error' WHERE capture_status = 'pending'"
+    )
+    conn.commit()
+    return cur.rowcount
+
+
+def get_by_flow_id(conn, flow_id: str, ctx: Optional[StorageContext] = None):
+    row = conn.execute(
+        f"SELECT {_SELECT_COLS} FROM history WHERE flow_id = ? ORDER BY id DESC LIMIT 1",
+        (flow_id,),
+    ).fetchone()
+    return _row_to_record(row, ctx) if row else None
+
+
 # ----- history reads --------------------------------------------------------
 
 
 def _row_to_record(row: tuple, ctx: Optional[StorageContext]) -> HistoryRecord:
     (
         rid,
+        flow_id,
         scheme,
         host,
         port,
@@ -126,6 +188,7 @@ def _row_to_record(row: tuple, ctx: Optional[StorageContext]) -> HistoryRecord:
         req_body_ref,
         req_body_dropped,
         req_length,
+        req_content_encoding,
         req_start_ts,
         status,
         resp_length,
@@ -135,6 +198,7 @@ def _row_to_record(row: tuple, ctx: Optional[StorageContext]) -> HistoryRecord:
         resp_body,
         resp_body_ref,
         resp_body_dropped,
+        resp_content_encoding,
         resp_complete_ts,
         capture_status,
     ) = row
@@ -146,6 +210,7 @@ def _row_to_record(row: tuple, ctx: Optional[StorageContext]) -> HistoryRecord:
 
     return HistoryRecord(
         id=rid,
+        flow_id=flow_id,
         scheme=scheme,
         host=host,
         port=port,
@@ -157,6 +222,7 @@ def _row_to_record(row: tuple, ctx: Optional[StorageContext]) -> HistoryRecord:
         req_body_ref=req_body_ref,
         req_body_dropped=bool(req_body_dropped),
         req_length=req_length,
+        req_content_encoding=req_content_encoding,
         req_start_ts=req_start_ts,
         status=status,
         resp_length=resp_length,
@@ -166,6 +232,7 @@ def _row_to_record(row: tuple, ctx: Optional[StorageContext]) -> HistoryRecord:
         resp_body=bytes(resp_body) if resp_body is not None else None,
         resp_body_ref=resp_body_ref,
         resp_body_dropped=bool(resp_body_dropped),
+        resp_content_encoding=resp_content_encoding,
         resp_complete_ts=resp_complete_ts,
         capture_status=CaptureStatus(capture_status),
     )
@@ -186,18 +253,32 @@ def get_history(
     conn,
     host: Optional[str] = None,
     limit: int = 500,
+    offset: int = 0,
     ctx: Optional[StorageContext] = None,
 ) -> List[HistoryRecord]:
+    # SQLite treats LIMIT -1 as "no limit"; map any non-positive limit to that so
+    # callers can request every row (with OFFSET for paging).
+    sql_limit = limit if (limit is not None and limit > 0) else -1
     if host:
         rows = conn.execute(
-            f"SELECT {_SELECT_COLS} FROM history WHERE host = ? ORDER BY id LIMIT ?",
-            (host, limit),
+            f"SELECT {_SELECT_COLS} FROM history WHERE host = ? "
+            "ORDER BY id LIMIT ? OFFSET ?",
+            (host, sql_limit, offset),
         ).fetchall()
     else:
         rows = conn.execute(
-            f"SELECT {_SELECT_COLS} FROM history ORDER BY id LIMIT ?", (limit,)
+            f"SELECT {_SELECT_COLS} FROM history ORDER BY id LIMIT ? OFFSET ?",
+            (sql_limit, offset),
         ).fetchall()
     return [_row_to_record(r, ctx) for r in rows]
+
+
+def count_history_where(conn, host: Optional[str] = None) -> int:
+    if host:
+        return conn.execute(
+            "SELECT count(*) FROM history WHERE host = ?", (host,)
+        ).fetchone()[0]
+    return conn.execute("SELECT count(*) FROM history").fetchone()[0]
 
 
 # ----- scope ----------------------------------------------------------------

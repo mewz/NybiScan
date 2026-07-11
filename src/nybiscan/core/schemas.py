@@ -44,6 +44,11 @@ class HistoryRecord(BaseModel):
 
     id: Optional[int] = None
 
+    # flow_id correlates the INSERT (on request) with the UPDATE (on response),
+    # so pending -> complete/error is a two-step write on one row. Set by the
+    # proxy addon to mitmproxy's flow id; None for records inserted directly.
+    flow_id: Optional[str] = None
+
     # host = scheme + host + port, split into fields for querying
     scheme: str = "http"
     host: str
@@ -58,6 +63,7 @@ class HistoryRecord(BaseModel):
     req_body_ref: Optional[str] = None  # sha256 of spilled body, if spilled
     req_body_dropped: bool = False  # filter dropped a binary/image body
     req_length: int = 0
+    req_content_encoding: Optional[str] = None  # original wire encoding (gzip, br)
     req_start_ts: int = 0  # UTC epoch millis
 
     # response
@@ -69,6 +75,7 @@ class HistoryRecord(BaseModel):
     resp_body: Optional[bytes] = None
     resp_body_ref: Optional[str] = None
     resp_body_dropped: bool = False
+    resp_content_encoding: Optional[str] = None  # original wire encoding (gzip, br)
     resp_complete_ts: Optional[int] = None  # UTC epoch millis
 
     capture_status: CaptureStatus = CaptureStatus.pending

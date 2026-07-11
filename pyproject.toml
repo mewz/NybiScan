@@ -8,16 +8,23 @@ version = "0.1.0"
 description = "NybiScan core: project-based HTTP/HTTPS intercepting proxy for authorized penetration testing."
 requires-python = ">=3.11"
 dependencies = [
-    "pydantic>=2",
+    # pydantic capped <2.12: mitmproxy 12.2.3 pins typing-extensions<=4.14, while
+    # pydantic>=2.12 requires typing-extensions>=4.14.1. Capping keeps the whole
+    # dependency set resolvable to prebuilt wheels (no source builds).
+    "pydantic>=2,<2.12",
     "fastapi",
     "uvicorn[standard]",
     "sqlcipher3==0.6.2",
     "argon2-cffi",
     "tomli-w",
+    "mitmproxy==12.2.3",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "httpx"]
+# httpx2 (Pydantic-maintained successor to httpx, github.com/pydantic/httpx2) is
+# what starlette.testclient now uses; installing it avoids the deprecated httpx
+# fallback path. We only touch an http client via TestClient.
+dev = ["pytest", "httpx2"]
 
 [project.scripts]
 nybiscan = "nybiscan.cli.__main__:main"
@@ -28,3 +35,8 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+# Silence third-party deprecation noise (mitmproxy/pyparsing/ldap3/starlette).
+# We have no deprecations of our own to surface yet.
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]

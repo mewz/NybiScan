@@ -16,7 +16,8 @@ import socket
 from typing import Tuple
 
 from ..core.config import app_support_dir
-from .app import AppState, create_app
+from .app import create_app
+from .state import AppState
 
 RUNTIME_FILENAME = "runtime.json"
 
@@ -50,7 +51,9 @@ def read_runtime() -> Tuple[int, str]:
     return int(data["port"]), str(data["token"])
 
 
-def serve(port: int | None = None) -> None:
+def serve(port: int | None = None, on_startup=None) -> None:
+    """Run the control API on 127.0.0.1. on_startup runs inside the app lifespan
+    (used by `proxy start` to open a project and start the proxy)."""
     import uvicorn
 
     token = secrets.token_urlsafe(32)
@@ -58,6 +61,6 @@ def serve(port: int | None = None) -> None:
     write_runtime(port, token)
 
     state = AppState(token)
-    app = create_app(state)
+    app = create_app(state, on_startup=on_startup)
     print(f"NybiScan control API listening on http://127.0.0.1:{port}")
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")

@@ -11,10 +11,15 @@ detection, exfiltrating data, or attacking out-of-scope hosts, and never will.
 
 ## Status
 
-Plan 1 (this session): the headless Python core and persistence layer, plus a
-localhost control API skeleton and a CLI. No proxy engine and no GUI yet (later
-plans). See CLAUDE.md for the architecture and the full phased plan, and
-DECISIONS.md for locked decisions.
+Plans 1 and 2 are done: the headless Python core and persistence layer, the
+localhost control API, and the in-process mitmproxy-based capture engine with the
+CA lifecycle and a live history WebSocket. No GUI yet (Plan 3). See CLAUDE.md for
+the architecture and the full phased plan, and DECISIONS.md for locked decisions.
+
+To intercept https you install and trust the NybiScan CA once (`nybiscan ca
+generate --global`, `nybiscan ca export ...`, then add it to your keychain or
+browser). The capture proxy and the control API are separate listeners on
+separate ports; only the control API is bearer-token authenticated.
 
 ## Architecture
 
@@ -42,6 +47,18 @@ nybiscan info /path/to/proj.nybiscan
 nybiscan export /path/to/proj.nybiscan out.jsonl
 nybiscan serve            # runs the localhost control API
 nybiscan health-check     # probes a running control API (PASS/FAIL)
+
+# CA (global by default; ~/.nybiscan/ca)
+nybiscan ca generate --global
+nybiscan ca export /tmp/nybiscan-ca.crt        # public cert only; install/trust it
+nybiscan ca info
+
+# capture proxy (foreground; Ctrl-C or `nybiscan proxy stop` to stop)
+nybiscan proxy start --project /path/to/proj.nybiscan   # default 127.0.0.1:8080
+nybiscan history                                         # list entries (paged, default 200)
+nybiscan history --all                                   # every entry
+nybiscan history --limit 100 --offset 200                # page through
+nybiscan proxy stop
 ```
 
 An encrypted project cannot be recovered without its passphrase. There is no

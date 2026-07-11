@@ -18,9 +18,11 @@ import sys
 import urllib.error
 import urllib.request
 
+from ..core import ca as core_ca
+from ..core import config as core_config
 from ..core import export as core_export
 from ..core import project as core_project
-from ..core.errors import NybiScanError, WrongPassphraseError
+from ..core.errors import CaExistsError, NybiScanError, WrongPassphraseError
 
 
 def _prompt_new_passphrase() -> str:
@@ -158,6 +160,178 @@ def cmd_health_check(args: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
+# ----- control-API client helpers (for proxy stop / history) ----------------
+
+
+def _api_request(method: str, path: str, body: dict | None = None):
+    from ..api.server import read_runtime
+
+    port, token = read_runtime()
+    url = f"http://127.0.0.1:{port}{path}"
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(url, data=data, method=method)
+    req.add_header("Authorization", f"Bearer {token}")
+    if data is not None:
+        req.add_header("Content-Type", "application/json")
+    with urllib.request.urlopen(req, timeout=15) as r:
+        raw = r.read()
+    return json.loads(raw) if raw else {}
+
+
+def _ca_confdir_for(project_path: str | None) -> "object":
+    from pathlib import Path
+
+    if project_path:
+        return core_project._normalize_bundle(project_path) / "ca"
+    return core_ca.global_ca_dir()
+
+
+# ----- proxy -----------------------------------------------------------------
+
+
+def cmd_proxy_start(args: argparse.Namespace) -> int:
+    from ..api.proxy_control import start_proxy
+    from ..api.server import serve
+
+    bundle = core_project._normalize_bundle(args.project)
+    try:
+        toml_data = core_config.read_project_toml(bundle)
+    except FileNotFoundError:
+        print(f"error: not a NybiScan project: {bundle}", file=sys.stderr)
+        return 1
+    encrypted = bool((toml_data.get("encryption", {}) or {}).get("enabled"))
+    passphrase = getpass.getpass("Passphrase: ") if encrypted else None
+
+    def _startup(state):
+        project = core_project.open_project(bundle, passphrase=passphrase)
+        state.attach_project(project)
+        status = start_proxy(
+            state, ip=args.ip, port=args.port, ssl_insecure=args.ssl_insecure
+        )
+        ca_cert = f"{status['ca_dir']}/{core_ca.CA_CERT_PEM}"
+        print(f"Proxy listening on http://{status['listen_host']}:{status['listen_port']}")
+        print(f"Install CA (trust this to intercept https): {ca_cert}")
+        if status.get("ssl_insecure"):
+            print("WARNING: ssl_insecure is ON (upstream TLS not verified) - test use only")
+        print("Press Ctrl-C or run `nybiscan proxy stop` to stop the proxy.")
+
+    serve(on_startup=_startup)
+    return 0
+
+
+def cmd_proxy_stop(args: argparse.Namespace) -> int:
+    try:
+        result = _api_request("POST", "/proxy/stop")
+    except FileNotFoundError:
+        print("error: no running control API (runtime.json missing)", file=sys.stderr)
+        return 1
+    except urllib.error.URLError as exc:
+        print(f"error: could not reach control API: {exc}", file=sys.stderr)
+        return 1
+    print(f"proxy stopped (running={result.get('running')})")
+    return 0
+
+
+# ----- ca --------------------------------------------------------------------
+
+
+def cmd_ca_generate(args: argparse.Namespace) -> int:
+    confdir = _ca_confdir_for(args.project) if args.project else core_ca.global_ca_dir()
+    scope = "project" if args.project else "global"
+    try:
+        core_ca.generate(confdir, force=False)
+    except CaExistsError:
+        print(f"A {scope} CA already exists at {confdir}.", file=sys.stderr)
+        print("Regenerating INVALIDATES existing trust; you must re-install and", file=sys.stderr)
+        print("re-trust the new CA in every browser/keychain.", file=sys.stderr)
+        answer = input("Type 'regenerate' to proceed: ").strip()
+        if answer != "regenerate":
+            print("aborted.")
+            return 1
+        core_ca.generate(confdir, force=True)
+    print(f"CA generated at {confdir}")
+    print(f"Public cert to install: {confdir}/{core_ca.CA_CERT_PEM}")
+    return 0
+
+
+def cmd_ca_import(args: argparse.Namespace) -> int:
+    confdir = _ca_confdir_for(args.project) if args.project else core_ca.global_ca_dir()
+    core_ca.import_ca(cert_path=args.cert, key_path=args.key, confdir=confdir)
+    print(f"CA imported to {confdir}")
+    return 0
+
+
+def cmd_ca_export(args: argparse.Namespace) -> int:
+    confdir = _ca_confdir_for(args.project) if args.project else core_ca.global_ca_dir()
+    try:
+        out = core_ca.export_cert(confdir, args.out, fmt=args.format)
+    except NybiScanError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    print(f"exported {args.format} cert to {out}")
+    return 0
+
+
+def cmd_ca_info(args: argparse.Namespace) -> int:
+    confdir = _ca_confdir_for(args.project) if args.project else core_ca.global_ca_dir()
+    try:
+        info = core_ca.ca_info(confdir)
+    except NybiScanError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    print(json.dumps(info, indent=2))
+    return 0
+
+
+# ----- history (client) ------------------------------------------------------
+
+
+def cmd_history(args: argparse.Namespace) -> int:
+    import urllib.parse
+
+    from ..api.server import read_runtime
+
+    # --all (or --limit 0) fetches every matching entry; otherwise page by limit.
+    limit = 0 if args.all else args.limit
+    query = {"limit": limit, "offset": args.offset}
+    if args.host:
+        query["host"] = args.host
+
+    try:
+        port, token = read_runtime()
+    except FileNotFoundError:
+        print("error: no running control API (runtime.json missing)", file=sys.stderr)
+        return 1
+
+    url = f"http://127.0.0.1:{port}/history?" + urllib.parse.urlencode(query)
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            rows = json.loads(resp.read())
+            total = int(resp.headers.get("X-Total-Count", len(rows)))
+    except urllib.error.HTTPError as exc:
+        print(f"error: {exc.code} {exc.read().decode(errors='replace')}", file=sys.stderr)
+        return 1
+
+    for r in rows:
+        print(
+            f"{r['id']:>5}  {r['capture_status']:<8} {str(r['status'] or '-'):>3}  "
+            f"{r['method']:<6} {r['scheme']}://{r['host']}:{r['port']}{r['url']}  "
+            f"[{r['mime_type'] or '-'}]"
+        )
+
+    shown_upto = args.offset + len(rows)
+    print(f"({len(rows)} shown of {total} total)")
+    if not args.all and shown_upto < total:
+        remaining = total - shown_upto
+        print(
+            f"  {remaining} more not shown. Use --all, a larger --limit, "
+            f"or --offset {shown_upto} for the next page.",
+            file=sys.stderr,
+        )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="nybiscan", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -188,6 +362,57 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_hc = sub.add_parser("health-check", help="probe a running control API")
     p_hc.set_defaults(func=cmd_health_check)
+
+    # proxy start/stop
+    p_proxy = sub.add_parser("proxy", help="run or stop the capture proxy")
+    proxy_sub = p_proxy.add_subparsers(dest="proxy_command", required=True)
+    p_pstart = proxy_sub.add_parser("start", help="open a project and run the proxy (foreground)")
+    p_pstart.add_argument("--project", required=True)
+    p_pstart.add_argument("--ip", default=None)
+    p_pstart.add_argument("--port", type=int, default=None)
+    p_pstart.add_argument(
+        "--ssl-insecure",
+        dest="ssl_insecure",
+        action="store_true",
+        help="do not verify upstream TLS (test only; needs NYBISCAN_ALLOW_INSECURE=1)",
+    )
+    p_pstart.set_defaults(func=cmd_proxy_start)
+    p_pstop = proxy_sub.add_parser("stop", help="stop the proxy on a running control API")
+    p_pstop.set_defaults(func=cmd_proxy_stop)
+
+    # ca generate/import/export/info
+    p_ca = sub.add_parser("ca", help="manage the intercept CA")
+    ca_sub = p_ca.add_subparsers(dest="ca_command", required=True)
+
+    p_cagen = ca_sub.add_parser("generate", help="generate a CA")
+    g = p_cagen.add_mutually_exclusive_group()
+    g.add_argument("--global", dest="is_global", action="store_true", help="global CA (default)")
+    g.add_argument("--project", default=None, help="generate a project-specific CA")
+    p_cagen.set_defaults(func=cmd_ca_generate)
+
+    p_caimp = ca_sub.add_parser("import", help="import an existing CA cert + key")
+    p_caimp.add_argument("--cert", required=True)
+    p_caimp.add_argument("--key", required=True)
+    p_caimp.add_argument("--project", default=None)
+    p_caimp.set_defaults(func=cmd_ca_import)
+
+    p_caexp = ca_sub.add_parser("export", help="export the public CA cert")
+    p_caexp.add_argument("out")
+    p_caexp.add_argument("--format", choices=["pem", "der"], default="pem")
+    p_caexp.add_argument("--project", default=None)
+    p_caexp.set_defaults(func=cmd_ca_export)
+
+    p_cainfo = ca_sub.add_parser("info", help="show CA details")
+    p_cainfo.add_argument("--project", default=None)
+    p_cainfo.set_defaults(func=cmd_ca_info)
+
+    # history (client)
+    p_hist = sub.add_parser("history", help="list captured history via the control API")
+    p_hist.add_argument("--host", default=None)
+    p_hist.add_argument("--limit", type=int, default=200, help="max entries per page (default 200)")
+    p_hist.add_argument("--offset", type=int, default=0, help="skip this many entries (paging)")
+    p_hist.add_argument("--all", action="store_true", help="fetch every matching entry")
+    p_hist.set_defaults(func=cmd_history)
 
     return parser
 

@@ -19,3 +19,11 @@ class PassphraseRequiredError(NybiScanError):
 
 class WrongPassphraseError(NybiScanError):
     """The provided passphrase failed to decrypt the project database."""
+
+
+class CaExistsError(NybiScanError):
+    """A CA already exists at the target location and force was not set."""
+
+
+class CaNotFoundError(NybiScanError):
+    """No CA exists at the requested location."""
