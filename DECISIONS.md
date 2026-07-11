@@ -93,3 +93,22 @@ Terse log of locked decisions. Newest context lives in CLAUDE.md.
 - No GUI. No Bench/replay. No dashboard/spider. No MCP. Later plans.
 - Reuse Plan 1 (BatchWriter, filters, schemas, repository, Project.close);
   extensions are additive, not forks.
+
+## Locked (Plan 2.5)
+
+- Manual checks that cannot be pytested live in MANUAL_TESTS.md, one accumulating
+  section per plan, each item stating what to do, the exact command, the pass
+  condition, and a "Verified" plan marker.
+- Machine-checkable convention: commands the guard verifies are backticked and
+  start with "nybiscan "; endpoints are backticked single "/"-rooted tokens with
+  no spaces and no dots. Filesystem paths are never standalone "/"-rooted
+  backticks (so the guard does not mistake them for endpoints).
+- Maintenance rule recorded in CLAUDE.md: a change to any referenced command,
+  endpoint, config path, env var, or port default updates the matching entry in
+  the same change; a plan is not gate-passed until MANUAL_TESTS.md matches the
+  build.
+- tests/test_manual_tests_current.py is the grep-guard. It introspects the LIVE
+  argparse parser (subcommand tree) and FastAPI app (walking
+  _IncludedRouter.original_router so the WebSocket route is seen) to check that
+  every referenced command/endpoint still exists. Existence only, not behavior.
+  No duplicate hardcoded list.

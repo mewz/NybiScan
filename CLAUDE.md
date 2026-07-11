@@ -87,6 +87,9 @@ is overridable via `NYBISCAN_CA_DIR` (tests use this to stay hermetic).
    Plan 1 BatchWriter (schema v2: flow_id + content_encoding; pending -> complete
    /error), CA generate/export/import, history over authed REST + a
    /ws/history WebSocket. Proxy listener is separate from the control API.
+2.5. Manual-test checklist system (done): MANUAL_TESTS.md plus a grep-guard test
+   (tests/test_manual_tests_current.py) that verifies referenced commands and
+   endpoints still exist. Docs infrastructure only, no behavior change.
 3. macOS Swift/SwiftUI GUI (history). NEXT.
 4. Bench (replay) + match/replace + decompress.
 5. Dashboard site map + scoped spider.
@@ -95,8 +98,27 @@ is overridable via `NYBISCAN_CA_DIR` (tests use this to stay hermetic).
 
 Do not start the next plan until the current test gate passes.
 
+## Manual tests (MANUAL_TESTS.md)
+
+Some checks cannot be automated (browser CA trust, live HTTPS capture, no orphan
+process, human-driven security guards). They live in MANUAL_TESTS.md, one
+accumulating section per plan.
+
+Maintenance rule (definition-of-done, not a soft reminder):
+
+- Any change to a CLI command, API endpoint, config path, env var, or port
+  default that appears in MANUAL_TESTS.md REQUIRES updating the matching entry in
+  the SAME change. A stale manual-test step is a bug, not a documentation nicety.
+- Every plan's gate includes: append that plan's manual checks to
+  MANUAL_TESTS.md, fix any entry the plan invalidated, and bump the entry's
+  "Verified" marker. A plan is not gate-passed until MANUAL_TESTS.md reflects the
+  current build.
+- tests/test_manual_tests_current.py mechanically fails if a referenced command
+  or endpoint no longer exists. It checks existence only; behavior stays manual.
+
 ## Conventions
 
-- No em dashes in generated docs (this file, DECISIONS.md, README.md).
+- No em dashes in generated docs (this file, DECISIONS.md, README.md,
+  MANUAL_TESTS.md).
 - Keep the core import-clean. Business logic in core, not api/gui.
 - Test what you change.
