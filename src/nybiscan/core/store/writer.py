@@ -63,6 +63,19 @@ class _StopMarker:
     pass
 
 
+class _WorkItem:
+    """A synchronous unit of work run on the writer thread (single-writer). Used
+    for low-frequency writes that need a result (e.g. Bench tab CRUD + sends)."""
+
+    __slots__ = ("fn", "result", "error", "event")
+
+    def __init__(self, fn) -> None:
+        self.fn = fn
+        self.result = None
+        self.error: Optional[BaseException] = None
+        self.event = threading.Event()
+
+
 class BatchWriter:
     def __init__(
         self,
@@ -109,6 +122,17 @@ class BatchWriter:
         self._q.put(marker)
         marker.event.wait()
 
+    def submit(self, fn):
+        """Run fn(conn) on the writer thread, commit, and return its result. Keeps
+        the single-writer invariant for synchronous low-frequency writes (Bench).
+        Raises if fn raises."""
+        item = _WorkItem(fn)
+        self._q.put(item)
+        item.event.wait()
+        if item.error is not None:
+            raise item.error
+        return item.result
+
     def close(self) -> None:
         """Drain, checkpoint the WAL, and close the write connection."""
         self._q.put(_StopMarker())
@@ -140,6 +164,23 @@ class BatchWriter:
                 self._do_flush(batch)
                 batch = []
                 break
+
+            if isinstance(item, _WorkItem):
+                # Flush pending history first, then run the unit of work in its own
+                # transaction and return the result to the caller.
+                self._do_flush(batch)
+                batch = []
+                try:
+                    item.result = item.fn(self._conn)
+                    self._conn.commit()
+                except BaseException as exc:  # noqa: BLE001 - surfaced to submit()
+                    try:
+                        self._conn.rollback()
+                    except Exception:
+                        pass
+                    item.error = exc
+                item.event.set()
+                continue
 
             batch.append(item)
             if len(batch) >= self._batch_size:

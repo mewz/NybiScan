@@ -267,3 +267,47 @@ Terse log of locked decisions. Newest context lives in CLAUDE.md.
   target in the Makefile (introspected live, no duplicate list).
 - No `Package.resolved` yet: there are no external SwiftPM dependencies. If one is
   added later, keep `Package.resolved` tracked (it is a lockfile, not an artifact).
+
+## Locked (Plan 4: Bench)
+
+- Bench (Repeater analog; named "Bench", never "Repeater") sends DIRECTLY via a
+  core HTTP client, NOT through the proxy. Bench sends record only in the tab's own
+  bench_history, never the main proxy history (avoids double-recording / clutter).
+- Send is UNRESTRICTED (not scope-gated): Bench is a manual, one-request-at-a-time
+  tool, so the human is the per-send authorization check. Scope gating is for
+  AUTOMATED active testing (spider/MCP/fuzzer) in later plans; Bench is
+  intentionally not behind it.
+- Send fidelity = VERBATIM, low-level (core/bench/engine.py writes raw bytes to a
+  plain/TLS socket via stdlib sockets; the response framing is read with
+  http.client). No high-level client, no injected/normalized headers. The
+  connection target is the tab's host/port/tls (the connection bar), NEVER derived
+  from the Host header; a bar-vs-Host mismatch is a supported test case (vhost
+  fuzzing, LB routing, SSRF-to-internal). Free-text METHOD.
+- Content-Length auto-fill is a toggle (default on) that touches ONLY
+  Content-Length; off sends it exactly as typed (smuggling/desync).
+- Send protocol = HTTP/1.1 only; HTTP/2 send deferred (binary/HPACK). TLS offers
+  http/1.1 via ALPN and does NOT verify certs (connects regardless of cert
+  validity, like the proxy upstream); a completed handshake with a bad cert is not
+  an error, but a genuine connection/handshake failure lands in bench_history.error.
+  No tls_verified recording; TLS posture analysis is out of scope.
+- Bench stores the FULL response body (the text-only capture filter does not apply;
+  it is an explicit single request). Response body stored decoded + original
+  content-encoding recorded (shared core/decode.py), like capture.
+- Send is SYNCHRONOUS (send -> wait -> show response); async-with-pending is not
+  needed for a single deliberate request.
+- Persistence: bench_tabs + bench_history in the .nybiscan bundle (schema v3 -> v4;
+  migrate CREATEs the tables, transactional + idempotent, tested plaintext +
+  encrypted). bench_tabs stores raw_request text + connection metadata (no
+  structured header columns; raw text is the wire source of truth). Encrypted
+  projects keep Bench bodies in-db.
+- Writes use the single-writer BatchWriter via a new submit(fn) primitive (runs on
+  the writer thread synchronously, returns a result); no competing db connection.
+- Send-to-Bench seeds a tab from a capture: h1.1 request used as-is; h2 (version
+  HTTP/2.0, no Host header) is reconstructed to h1.1 by normalizing the request-line
+  version and injecting a Host from the captured host[:port]; a dropped binary body
+  is noted (cannot replay). Reconstruction is a seeding convenience only; edits +
+  send stay byte-verbatim.
+- GUI reuses the editable request/response surface: an EditableRawTextView (raw
+  request) + the read-only RawTextView (response), a connection bar, and a
+  History/Bench section toggle. Thin client: no HTTP-sending or business logic in
+  Swift.

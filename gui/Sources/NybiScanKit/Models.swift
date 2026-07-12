@@ -251,3 +251,72 @@ public struct CaExportPayload: Encodable, Sendable {
     public let format: String
     public init(format: String) { self.format = format }
 }
+
+// ----- Bench (Repeater analog) ----------------------------------------------
+
+public struct BenchTab: Codable, Sendable, Equatable, Identifiable {
+    public let id: Int
+    public let name: String
+    public let orderIndex: Int
+    public let rawRequest: String
+    public let connHost: String
+    public let connPort: Int
+    public let connTls: Bool
+    public let contentLengthAutofill: Bool
+    public let droppedNote: String?  // set on seed when the captured body was dropped
+}
+
+public struct BenchSendSummary: Codable, Sendable, Equatable, Identifiable {
+    public let id: Int
+    public let tabId: Int
+    public let status: Int?
+    public let respLength: Int
+    public let mimeType: String?
+    public let error: String?
+    public let sentTs: Int
+    public let durationMs: Int
+}
+
+public struct BenchSendDetail: Codable, Sendable, Equatable {
+    public let id: Int
+    public let tabId: Int
+    public let status: Int?
+    public let respLength: Int
+    public let mimeType: String?
+    public let error: String?
+    public let sentTs: Int
+    public let durationMs: Int
+    public let reqRaw: String
+    public let connHost: String
+    public let connPort: Int
+    public let connTls: Bool
+    public let contentLengthAutofill: Bool
+    public let respHeadersRaw: String
+    public let respBodyB64: String?
+    public let respContentEncoding: String?
+}
+
+public struct CreateBenchTabPayload: Encodable, Sendable {
+    public let name: String?
+    public let seedHistoryId: Int?
+    public init(name: String? = nil, seedHistoryId: Int? = nil) {
+        self.name = name; self.seedHistoryId = seedHistoryId
+    }
+}
+
+public struct UpdateBenchTabPayload: Encodable, Sendable {
+    public let name: String?
+    public let orderIndex: Int?
+    public let rawRequest: String?
+    public let connHost: String?
+    public let connPort: Int?
+    public let connTls: Bool?
+    public let contentLengthAutofill: Bool?
+    public init(name: String? = nil, orderIndex: Int? = nil, rawRequest: String? = nil,
+                connHost: String? = nil, connPort: Int? = nil, connTls: Bool? = nil,
+                contentLengthAutofill: Bool? = nil) {
+        self.name = name; self.orderIndex = orderIndex; self.rawRequest = rawRequest
+        self.connHost = connHost; self.connPort = connPort; self.connTls = connTls
+        self.contentLengthAutofill = contentLengthAutofill
+    }
+}

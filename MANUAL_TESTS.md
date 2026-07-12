@@ -348,3 +348,58 @@ app.
 - Expected: the guard FAILS while the bogus target is referenced and passes once
   reverted, so stale make-target docs cannot ship.
 - Verified: Plan 3.5
+
+---
+
+## Plan 4 - Bench (Repeater analog)
+
+### 4.1 Create, edit, and send a Bench request
+- What: craft a request and send it verbatim, directly (not through the proxy).
+- Command: open a project; switch to Bench (the History/Bench toggle); click + to
+  create a tab. Set the connection bar (host:port + HTTPS checkbox) and edit the
+  raw request (try an arbitrary METHOD like `FOOBAR` and a custom header). Press
+  Send (Cmd-Return). The GUI calls `/bench/tabs` and `/bench/tabs/{id}/send`.
+- Expected: the response renders in the lower pane (status, headers, decoded
+  body); the send is recorded in the tab's history. Bench sends do NOT appear in
+  the main History view (separation).
+- Verified: Plan 4
+
+### 4.2 Content-Length auto-fill toggle
+- What: verbatim Content-Length control.
+- Command: with "Auto C-L" ON, edit the body and send (Content-Length is
+  recomputed to match). Turn "Auto C-L" OFF, set a deliberately-wrong
+  Content-Length in the raw request, and send.
+- Expected: with the toggle on, the sent Content-Length matches the body; with it
+  off, the wrong value is sent exactly as typed (required for smuggling/desync
+  tests). Nothing else in the request is altered either way.
+- Verified: Plan 4
+
+### 4.3 Connection bar is definitive; Host header is independent
+- What: the socket target is the bar, not the Host header.
+- Command: point the connection bar at one host:port but leave a DIFFERENT `Host:`
+  header in the raw request. Send.
+- Expected: Bench connects to the BAR's host:port and sends the typed Host header
+  verbatim (never rewritten or synced). A mismatch is a supported test case.
+- Verified: Plan 4
+
+### 4.4 TLS does not verify
+- What: Bench connects regardless of cert validity, like the proxy.
+- Command: send an HTTPS request (HTTPS checkbox on) to a host with a self-signed
+  or invalid certificate.
+- Expected: the send succeeds and the response renders (no cert error, not
+  blocked). A host that is unreachable / cannot complete the handshake shows a
+  clear failure in the response pane instead.
+- Verified: Plan 4
+
+### 4.5 Send to Bench, tabs, per-tab history, persistence
+- What: seed from capture, manage tabs, step history, persist across reopen.
+- Command: in History, right-click a captured row -> "Send to Bench" (calls
+  `/bench/tabs` seeded, opening a prefilled tab; a dropped binary body is noted).
+  Rename a tab (right-click) and create several tabs. Send a tab a few times and
+  step back/forth through its history via the response-pane picker (uses
+  `/bench/tabs/{id}/history` and `/bench/history/{entry_id}`). Quit and reopen the
+  project.
+- Expected: the seeded tab is prefilled with the captured request (editable);
+  tabs rename/close; the history picker restores each prior send's request +
+  response; after reopening the project, Bench tabs and their history PERSIST.
+- Verified: Plan 4

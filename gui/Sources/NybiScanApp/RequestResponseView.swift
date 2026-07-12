@@ -93,6 +93,52 @@ struct RequestResponseView: View {
     }
 }
 
+/// An EDITABLE monospaced text view for composing a raw request (Bench). Smart
+/// quotes/dashes/replacement are OFF so raw HTTP bytes are never mangled. Two-way
+/// bound to a String.
+struct EditableRawTextView: NSViewRepresentable {
+    @Binding var text: String
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scroll = NSTextView.scrollableTextView()
+        scroll.hasVerticalScroller = true
+        if let tv = scroll.documentView as? NSTextView {
+            tv.isEditable = true
+            tv.isRichText = false
+            tv.allowsUndo = true
+            tv.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+            tv.textContainerInset = NSSize(width: 8, height: 8)
+            tv.isAutomaticQuoteSubstitutionEnabled = false
+            tv.isAutomaticDashSubstitutionEnabled = false
+            tv.isAutomaticTextReplacementEnabled = false
+            tv.isAutomaticSpellingCorrectionEnabled = false
+            tv.delegate = context.coordinator
+            tv.string = text
+        }
+        return scroll
+    }
+
+    func updateNSView(_ scroll: NSScrollView, context: Context) {
+        guard let tv = scroll.documentView as? NSTextView else { return }
+        // Only overwrite when the model changed externally (e.g. tab switch), so we
+        // do not clobber the caret while the user types.
+        if tv.string != text {
+            tv.string = text
+        }
+    }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        let parent: EditableRawTextView
+        init(_ parent: EditableRawTextView) { self.parent = parent }
+        func textDidChange(_ notification: Notification) {
+            guard let tv = notification.object as? NSTextView else { return }
+            parent.text = tv.string
+        }
+    }
+}
+
 /// A read-only, selectable, scrollable monospaced text view. Unlike SwiftUI Text,
 /// it paints large content immediately: on update we set the string and force a
 /// full layout + display, so a large body does not stay blank until an interaction.

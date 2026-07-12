@@ -105,7 +105,12 @@ hermetic and never touch the real user config or CA.
    canonical surface across both toolchains; README build diagram; grep-guard checks
    README make-targets exist. Future plan gates run `make test`. NEXT is Plan 4
    (Bench).
-4. Bench (replay) + match/replace + decompress.
+4. Bench (Repeater analog) (done): craft/edit/send requests verbatim (direct
+   low-level HTTP/1.1 send, not through the proxy; TLS no-verify like the proxy),
+   multiple renamable tabs + per-tab send history persisted in the bundle (schema
+   v4), send-to-Bench seeding from capture, Content-Length auto-fill toggle. Core
+   owns the send engine + storage; GUI reuses the editable request/response surface.
+   New /bench/* API. NEXT is Plan 5.
 5. Dashboard site map + scoped spider.
 6. MCP server over the core.
 7. Claude skill for MCP-driven source review + testing.

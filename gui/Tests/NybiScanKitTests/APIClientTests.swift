@@ -138,6 +138,53 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(export.certData, Data("abc".utf8))  // YWJj -> abc
     }
 
+    func testBenchTabDecodesAndSeedNote() async throws {
+        StubURLProtocol.responder = { _ in
+            (200, Data("""
+            {"id":3,"name":"Login","order_index":1,"raw_request":"GET / HTTP/1.1\\r\\nHost: h\\r\\n\\r\\n",
+             "conn_host":"h","conn_port":8443,"conn_tls":false,"content_length_autofill":true,
+             "dropped_note":"body dropped"}
+            """.utf8))
+        }
+        let tab = try await makeClient().createBenchTab(CreateBenchTabPayload(seedHistoryId: 9))
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/bench/tabs")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.httpMethod, "POST")
+        XCTAssertEqual(tab.id, 3)
+        XCTAssertEqual(tab.orderIndex, 1)
+        XCTAssertEqual(tab.connPort, 8443)
+        XCTAssertFalse(tab.connTls)
+        XCTAssertTrue(tab.contentLengthAutofill)
+        XCTAssertEqual(tab.droppedNote, "body dropped")
+    }
+
+    func testBenchUpdateHitsPatch() async throws {
+        StubURLProtocol.responder = { _ in
+            (200, Data(#"{"id":1,"name":"n","order_index":0,"raw_request":"r","conn_host":"h","conn_port":443,"conn_tls":true,"content_length_autofill":false,"dropped_note":null}"#.utf8))
+        }
+        let tab = try await makeClient().updateBenchTab(1, UpdateBenchTabPayload(rawRequest: "r", connTls: true))
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/bench/tabs/1")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.httpMethod, "PATCH")
+        XCTAssertNil(tab.droppedNote)
+        XCTAssertFalse(tab.contentLengthAutofill)
+    }
+
+    func testBenchSendDecodesResponse() async throws {
+        StubURLProtocol.responder = { _ in
+            (200, Data("""
+            {"id":5,"tab_id":1,"status":200,"resp_length":2,"mime_type":"text/plain","error":null,
+             "sent_ts":10,"duration_ms":7,"req_raw":"GET /x HTTP/1.1","conn_host":"h","conn_port":443,
+             "conn_tls":true,"content_length_autofill":true,"resp_headers_raw":"HTTP/1.1 200 OK",
+             "resp_body_b64":"b2s=","resp_content_encoding":null}
+            """.utf8))
+        }
+        let send = try await makeClient().benchSend(1)
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/bench/tabs/1/send")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.httpMethod, "POST")
+        XCTAssertEqual(send.status, 200)
+        XCTAssertEqual(send.reqRaw, "GET /x HTTP/1.1")
+        XCTAssertEqual(send.respBodyB64, "b2s=")  // -> "ok"
+    }
+
     func testNon2xxThrowsControlAPIError() async {
         StubURLProtocol.responder = { _ in (401, Data(#"{"detail":"invalid token"}"#.utf8)) }
         do {
