@@ -242,17 +242,20 @@ app.
   blocks while decoding.
 - Verified: Plan 3
 
-### 3.10 Vertical layout and collapsible divider
+### 3.10 Vertical layout and user-owned collapsible divider
 - What: the table/detail split is top/bottom with a draggable, collapsible
-  divider.
-- Command: drag the divider between the table (top) and detail (bottom) up and
-  down. Click different rows while the divider is off-center.
-- Expected: the divider drags freely up and down. The detail can be squashed to a
-  sliver (table takes almost the whole window while scanning) AND expanded large
-  (detail takes most of the window while reading); neither pane imposes a tall
-  minimum that blocks this. The divider position holds across clicking different
-  rows (it does not reset to 50/50). (Cross-launch persistence of the divider and
-  column widths is deferred.)
+  divider that only the user moves.
+- Command: launch (split is ~50/50). Click a row. Drag the divider down so the
+  detail is a sliver. Click several other rows; deselect and reselect; select a
+  still-pending row.
+- Expected: the divider drags freely up and down; the detail can be squashed to a
+  sliver (table nearly full window) AND expanded large (detail most of the
+  window); neither pane imposes a tall minimum that blocks this. Clicking the
+  FIRST row does NOT move the divider. After dragging to a sliver, clicking other
+  rows, deselecting/reselecting, and selecting a pending row all leave the divider
+  EXACTLY where the user put it (it never snaps back to 50/50 or auto-grows).
+  Selection changes only the detail CONTENT, never its height. (Cross-launch
+  persistence of the divider and column widths is deferred.)
 - Verified: Plan 3
 
 ### 3.7 Options panel: proxy status and CA info

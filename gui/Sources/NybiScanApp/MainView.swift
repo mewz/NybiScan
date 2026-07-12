@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import NybiScanKit
 
@@ -11,31 +12,36 @@ struct MainView: View {
     @State private var sortedRows: [HistorySummary] = []
     @State private var lastCount = -1
 
+    // The vertical split is USER-OWNED: detailFraction is the bottom (detail)
+    // pane's share of the height. It is written ONLY by the drag gesture. The
+    // 0.5 default applies once at launch; after that the divider holds wherever
+    // the user dragged it. Selection changes the detail pane's CONTENT, never its
+    // HEIGHT, so clicking rows never moves the divider.
+    @State private var detailFraction: CGFloat = 0.5
+    @State private var dragStartFraction: CGFloat?
+
+    private let dividerThickness: CGFloat = 6
+
     // Re-sort on a throttled cadence (not per WS event): during active capture,
     // entry_updated fires many times per second, and re-sorting the whole table
     // on each would spike CPU.
     private let resortTick = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
 
     var body: some View {
-        // Data table on top (full width), inspector detail below (full width),
-        // with a draggable vertical divider. This is a data-table + inspector
-        // model, not a navigation master-detail sidebar.
-        VSplitView {
+        GeometryReader { geo in
+            let available = max(0, geo.size.height - dividerThickness)
+            let detailH = min(max(available * detailFraction, 0), available)
+            let tableH = available - detailH
             VStack(spacing: 0) {
-                liveHeader
-                Divider()
-                historyTable
+                tablePane.frame(height: tableH).clipped()
+                splitDivider(available: available)
+                // DetailView identity is stable; only its content changes on
+                // selection. Its height comes from detailFraction, never selection.
+                DetailView().frame(height: detailH).clipped()
             }
-            .frame(minHeight: 44)  // can squash to a sliver so the detail can dominate
-
-            DetailView()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .frame(minHeight: 0)  // can squash to a sliver while scanning the table
         }
         .navigationTitle(model.project?.name ?? "NybiScan")
         .onChange(of: selection) { _, newValue in
-            // Selection is by entry id (stable across re-sort), so an open detail
-            // stays on the same entry as rows stream in.
             if let id = newValue { Task { await model.select(id: id) } }
         }
         .onChange(of: sortOrder) { _, _ in resort(force: true) }
@@ -52,6 +58,40 @@ struct MainView: View {
             }
         }
         .sheet(isPresented: $showOptions) { OptionsView() }
+    }
+
+    private var tablePane: some View {
+        VStack(spacing: 0) {
+            liveHeader
+            Divider()
+            historyTable
+        }
+    }
+
+    private func splitDivider(available: CGFloat) -> some View {
+        ZStack {
+            Color(nsColor: .separatorColor)
+            // A subtle grip mark in the middle.
+            RoundedRectangle(cornerRadius: 1).fill(Color.secondary.opacity(0.5))
+                .frame(width: 28, height: 2)
+        }
+        .frame(height: dividerThickness)
+        .contentShape(Rectangle())
+        .onHover { inside in
+            if inside { NSCursor.resizeUpDown.set() } else { NSCursor.arrow.set() }
+        }
+        .gesture(
+            DragGesture()
+                .onChanged { value in
+                    guard available > 0 else { return }
+                    let start = dragStartFraction ?? detailFraction
+                    if dragStartFraction == nil { dragStartFraction = detailFraction }
+                    // Divider up (negative translation) grows the bottom detail.
+                    let newDetailH = (start * available) - value.translation.height
+                    detailFraction = min(max(newDetailH / available, 0), 1)
+                }
+                .onEnded { _ in dragStartFraction = nil }
+        )
     }
 
     private var liveHeader: some View {

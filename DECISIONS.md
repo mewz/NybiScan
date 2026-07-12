@@ -186,13 +186,21 @@ Terse log of locked decisions. Newest context lives in CLAUDE.md.
 
 ## Locked (Plan 3 layout addendum)
 
-- The history UI is a vertical (top/bottom) split (`VSplitView`): the table spans
-  the full window width on top, the detail spans the full width below. This is a
-  data-table + inspector model, not a navigation master-detail sidebar.
+- The history UI is a vertical (top/bottom) split: the table spans the full window
+  width on top, the detail spans the full width below. Data-table + inspector
+  model, not a navigation master-detail sidebar.
+- The divider is a CUSTOM user-owned split, not SwiftUI `VSplitView`. `VSplitView`
+  derives its position from child content sizes, so selecting a row (detail grows
+  from the empty state) snapped the divider. Instead the bottom (detail) pane's
+  height is a single `@State` fraction written ONLY by the drag gesture; the
+  0.5 default applies once at launch and thereafter the divider holds where the
+  user dragged it. Selection changes the detail pane's CONTENT, never its HEIGHT
+  (DetailView identity is stable; its height comes from the fraction). No
+  selection, deselection, reselection, or pending/complete transition ever moves
+  the divider.
 - The detail pane is ALWAYS present (stable layout), blank when nothing is
-  selected. The vertical divider drags freely and both panes collapse to a sliver
-  at both extremes (no tall minimum blocks the scan-then-read workflow). Divider
-  position is stable across row selection within a session.
+  selected. The divider drags freely and both panes collapse to a sliver at both
+  extremes (no tall minimum blocks the scan-then-read workflow).
 - Column widths are by importance/content: Host has a hard min floor (~220pt) that
   fits a full https domain before truncating; Host and URL flex to absorb extra
   window width; MIME/IP/Time are medium-fixed (fit application/javascript,
