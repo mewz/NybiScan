@@ -199,6 +199,25 @@ def test_history_appends_in_order_and_persists_across_reopen(client, tmp_path):
     assert [h["id"] for h in hist2] == ids
 
 
+def test_history_storage_is_unbounded(client):
+    # The 25-entry dropdown is a DISPLAY cap only: storage stays unbounded, so a tab
+    # with more than 25 sends keeps ALL of them (append-only, nothing trimmed).
+    origin = Origin()
+    tab = client.post("/bench/tabs", json={}, headers=AUTH).json()
+    client.patch(
+        f"/bench/tabs/{tab['id']}",
+        json={"conn_host": "127.0.0.1", "conn_port": origin.port, "conn_tls": False,
+              "raw_request": "GET /json HTTP/1.1\r\nHost: h\r\n\r\n"},
+        headers=AUTH,
+    )
+    for _ in range(28):
+        assert client.post(f"/bench/tabs/{tab['id']}/send", headers=AUTH).json()["status"] == 200
+    origin.stop()
+    hist = client.get(f"/bench/tabs/{tab['id']}/history", headers=AUTH).json()
+    assert len(hist) == 28  # all 28 returned, not capped to 25
+    assert [h["id"] for h in hist] == sorted(h["id"] for h in hist)  # ascending append order
+
+
 def test_cancel_no_inflight_is_noop(client):
     tab = client.post("/bench/tabs", json={}, headers=AUTH).json()
     r = client.post(f"/bench/tabs/{tab['id']}/cancel", headers=AUTH)

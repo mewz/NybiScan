@@ -406,6 +406,26 @@ app.
   the project, Bench tabs and their history PERSIST.
 - Verified: Plan 4
 
+### 4.6a History dropdown: per-tab ordinals, capped at 25, all stored
+- What: the dropdown labels each send with its PER-TAB ordinal (1..N), not the global
+  id, and windows to the 25 most recent while keeping every send.
+- Command: on one tab, send more than 25 times. Open the `<` dropdown. Then create a
+  second tab and send it a few times; open its dropdown. On the busy tab, use the `<`
+  arrow to step older past the 25-entry window down to send 1.
+- Expected: labels read `1, 2, 3 ...` per tab (each tab starts its own 1), NOT global
+  `#12, #13 ...`; the dropdown shows at most the 25 most recent; the `x/N` indicator
+  reflects ALL sends (N > 25); the `<` arrow still reaches send 1 even though it is
+  outside the dropdown window. Nothing is trimmed from storage.
+- Verified: Plan 4
+
+### 4.8 Closing a tab discards its history (no orphans)
+- What: closing a tab removes that tab's send history (no confirmation prompt).
+- Command: send a tab a few times, then right-click the tab -> Close.
+- Expected: the tab closes immediately (no prompt) and its `bench_history` rows are
+  deleted (nothing orphaned or kept). On an encrypted project this means the
+  decrypted test-request history is actually discarded, not left in the db.
+- Verified: Plan 4
+
 ### 4.6 Send/Cancel lifecycle: non-blocking, cancellable, bounded
 - What: a send stays responsive; a hang is recoverable (Cancel) and bounded (timeout).
 - Command: send a normal request and watch the Send button become Cancel with a

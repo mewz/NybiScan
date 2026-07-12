@@ -214,6 +214,28 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(BenchHistoryNav.newest([9]), 9)
     }
 
+    func testDropdownWindowCapsAt25NewestFirstWithPerTabOrdinals() {
+        // 30 sends: dropdown shows the most recent 25, newest-first; ordinal is the
+        // 1-based per-tab position (index+1), NOT the global bench_history id.
+        let idx = BenchHistoryNav.windowIndices(count: 30)
+        XCTAssertEqual(idx.count, 25)
+        XCTAssertEqual(idx.first, 29)  // newest (ordinal 30)
+        XCTAssertEqual(idx.last, 5)    // oldest still in window (ordinal 6)
+        XCTAssertEqual(BenchHistoryNav.ordinal(index: idx.first!), 30)
+        XCTAssertEqual(BenchHistoryNav.ordinal(index: idx.last!), 6)
+        // Send #1 (index 0) is OUTSIDE the window but reachable via the arrows.
+        XCTAssertFalse(idx.contains(0))
+        XCTAssertEqual(BenchHistoryNav.older(Array(0..<30), current: 5), 4)  // step past the window
+    }
+
+    func testDropdownWindowShowsAllWhenFewerThan25() {
+        // Two independent tabs each number their own sends from 1 (per-tab, not global).
+        let idx = BenchHistoryNav.windowIndices(count: 3)
+        XCTAssertEqual(idx, [2, 1, 0])  // newest-first
+        XCTAssertEqual(idx.map { BenchHistoryNav.ordinal(index: $0) }, [3, 2, 1])
+        XCTAssertEqual(BenchHistoryNav.windowIndices(count: 0), [])
+    }
+
     func testNon2xxThrowsControlAPIError() async {
         StubURLProtocol.responder = { _ in (401, Data(#"{"detail":"invalid token"}"#.utf8)) }
         do {

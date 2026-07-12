@@ -138,8 +138,14 @@ struct BenchView: View {
             let hasNewer = BenchHistoryNav.newer(ids, current: model.viewedSendId) != nil
             HStack(spacing: 4) {
                 Menu {
-                    ForEach(model.benchHistory.reversed()) { h in
-                        Button(Self.entryLabel(h)) { Task { await model.showBenchSend(h.id) } }
+                    // Windowed to the most recent 25 (a DISPLAY cap; all sends stay
+                    // stored and reachable via the arrows). Labels are per-tab
+                    // ordinals (1..N), not global bench_history ids.
+                    ForEach(BenchHistoryNav.windowIndices(count: model.benchHistory.count), id: \.self) { i in
+                        let h = model.benchHistory[i]
+                        Button(Self.entryLabel(ordinal: BenchHistoryNav.ordinal(index: i), h)) {
+                            Task { await model.showBenchSend(h.id) }
+                        }
                     }
                 } label: {
                     Image(systemName: "chevron.left")
@@ -160,16 +166,17 @@ struct BenchView: View {
         }
     }
 
-    private static func entryLabel(_ h: BenchSendSummary) -> String {
+    private static func entryLabel(ordinal: Int, _ h: BenchSendSummary) -> String {
         let outcome = h.status.map(String.init) ?? (h.error ?? "-")
-        return "#\(h.id)  \(outcome)"
+        return "\(ordinal)  \(outcome)"
     }
 
     private static func positionLabel(_ ids: [Int], current: Int?) -> String {
         let cur = current ?? ids.last
         guard let cur, let idx = ids.firstIndex(of: cur) else { return "" }
-        // Number from newest = 1 (Burp shows the send position, newest first).
-        return "\(ids.count - idx)/\(ids.count)"
+        // Per-tab ordinal of the viewed send (1 = first/oldest), matching the
+        // dropdown labels. N is this tab's total send count.
+        return "\(BenchHistoryNav.ordinal(index: idx))/\(ids.count)"
     }
 }
 

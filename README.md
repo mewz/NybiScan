@@ -23,8 +23,9 @@ authorized to test.
 - Request and response detail inspection.
 - Bench: a repeater-style surface to replay and edit requests verbatim, with
   per-tab send history.
-- Project persistence (a self-contained `.nybiscan` bundle, optionally encrypted).
+- Project persistence (a self-contained `.nybiscan` bundle, plaintext or encrypted).
 - CA lifecycle (generate, import, export) for HTTPS interception.
+- Makefile build orchestration across the Python core and the Swift GUI.
 
 ### Roadmap (planned, not yet built)
 

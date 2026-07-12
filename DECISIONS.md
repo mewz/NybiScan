@@ -348,3 +348,25 @@ Terse log of locked decisions. Newest context lives in CLAUDE.md.
   available from the history-row context menu AND the detail pane's text context
   menu, added alongside the NSTextView's own Cut/Copy/Paste (via the text view's
   menu delegate, so those are preserved).
+
+## Locked (Plan 4 closeout)
+
+- History dropdown labels use the PER-TAB ordinal (1..N by send order, 1 = the tab's
+  first send), NOT the global bench_history id, so each tab numbers its own sends
+  independently and the label matches the `x/N` position indicator. The position
+  indicator was aligned to the same convention (ordinal of the viewed send / total).
+- The dropdown is windowed to the 25 most recent sends (Burp-style), a DISPLAY cap
+  only: storage stays unbounded and append-only (nothing trimmed), and the `<`/`>`
+  arrows traverse the ENTIRE history, so send 1 remains reachable even when it falls
+  outside the window. Window/ordinal logic lives in Kit (BenchHistoryNav) and is
+  unit-tested; a Python test asserts >25 sends keep all rows.
+- Closing a tab discards its history with NO confirmation prompt (tabs are scratch
+  work; close means discard, matching Burp). delete_tab removes the tab's
+  bench_history rows AND the tab row explicitly in ONE writer.submit() transaction,
+  not relying on ON DELETE CASCADE (PRAGMA foreign_keys=ON is set regardless).
+  Tested on plaintext AND encrypted bundles: for encrypted projects this ensures the
+  decrypted test-request history is actually removed, not orphaned in the db.
+- README gained a Purpose section stating the Burp/ZAP-style manual-testing goal and
+  the planned AI/MCP capability, both under the same authorized-use framing, with an
+  explicit built-today vs roadmap split so the doc never claims unbuilt features
+  (same doc-currency discipline as the grep-guard).

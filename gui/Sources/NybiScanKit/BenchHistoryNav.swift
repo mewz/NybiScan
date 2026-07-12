@@ -21,4 +21,20 @@ public enum BenchHistoryNav {
               let i = ids.firstIndex(of: cur), i < ids.count - 1 else { return nil }
         return ids[i + 1]
     }
+
+    /// The 1-based per-tab ordinal of the send at `index` in the oldest -> newest
+    /// history array. This is the tab's own send sequence (1..N), NOT the global
+    /// bench_history id, and matches the `x/N` position indicator.
+    public static func ordinal(index: Int) -> Int { index + 1 }
+
+    /// Indices (into the oldest -> newest history array) of the sends the dropdown
+    /// should show: the most recent `cap` sends, ordered newest-first for display.
+    /// A DISPLAY cap only - storage is unbounded and the `<`/`>` arrows still
+    /// traverse the entire history, so ordinal 1 (the first send) stays reachable
+    /// even when it falls outside this window.
+    public static func windowIndices(count: Int, cap: Int = 25) -> [Int] {
+        guard count > 0 else { return [] }
+        let start = max(0, count - cap)  // most recent `cap` (or all if fewer)
+        return Array((start..<count).reversed())  // newest-first
+    }
 }
