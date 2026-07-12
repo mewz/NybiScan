@@ -242,6 +242,11 @@ app.
   Request. A still-pending Response tab shows a waiting state and then populates; a
   dropped binary body shows a clear "body dropped" note; non-UTF-8 bodies show a
   hex preview rather than crashing; the UI never blocks while decoding.
+- Large bodies render FULLY without interaction: select an entry with a large text
+  body (e.g. a ~250KB or ~460KB text/javascript response), open the Response tab.
+  The ENTIRE body paints immediately (no blank region below the first screenful),
+  with NO need to select text or scroll first. Arrowing between large responses
+  renders each fully without interaction, and the active tab still persists.
 - Verified: Plan 3
 
 ### 3.10 Vertical layout and user-owned collapsible divider

@@ -1,16 +1,29 @@
+import AppKit
 import SwiftUI
 import NybiScanKit
 
 /// Reusable tabbed Request/Response viewer. Read-only in Plan 3; the `editable`
 /// flag is reserved so Plan 4 Bench can reuse this SAME component with an editable
-/// Request tab and the resulting Response. Raw view only for now (Headers/Hex
-/// sub-tabs are deferred).
+/// Request tab. Raw view only for now (Headers/Hex sub-tabs are deferred).
+///
+/// The raw text is rendered with an NSTextView (RawTextView) rather than a SwiftUI
+/// Text in a ScrollView: SwiftUI Text does not get a fresh layout/redraw pass when
+/// a very large string is assigned asynchronously, so large bodies rendered blank
+/// until a selection/scroll forced a redraw. NSTextView handles large text and we
+/// force layout + display on update.
 struct RequestResponseView: View {
     let detail: HistoryDetail
-    // The active tab lives in model state (passed as a binding) so it PERSISTS
-    // across row selection: selecting a new row changes the content, not the tab.
     @Binding var tab: DetailTab
     var editable: Bool = false  // reserved for Bench (Plan 4); ignored here
+
+    @State private var requestText = ""
+    @State private var responseText = ""
+
+    // Recompute when the entry changes OR when its response arrives
+    // (pending -> complete keeps the same id but changes status/body).
+    private var loadKey: String {
+        "\(detail.id)|\(detail.captureStatus)|\(detail.respBodyB64?.count ?? -1)"
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -22,85 +35,50 @@ struct RequestResponseView: View {
             .labelsHidden()
             .padding(8)
             Divider()
-            ScrollView {
-                switch tab {
-                case .request: requestRaw
-                case .response: responseRaw
-                }
-            }
+            content
         }
+        .task(id: loadKey) { await load() }
     }
 
-    private var requestRaw: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            RawText(detail.reqHeadersRaw)
-            Divider()
-            BodyView(b64: detail.reqBodyB64, dropped: detail.reqBodyDropped)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-    }
-
-    @ViewBuilder private var responseRaw: some View {
-        if detail.captureStatus == "pending" {
-            HStack { ProgressView().controlSize(.small); Text("Waiting for response...") }
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding()
-        } else if detail.captureStatus == "error" {
-            Text("Request errored; no response captured.")
-                .foregroundStyle(.red)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding()
-        } else {
-            VStack(alignment: .leading, spacing: 6) {
-                RawText(detail.respHeadersRaw)
-                Divider()
-                BodyView(b64: detail.respBodyB64, dropped: detail.respBodyDropped)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding()
-        }
-    }
-}
-
-struct RawText: View {
-    let text: String
-    init(_ text: String) { self.text = text }
-    var body: some View {
-        Text(text.isEmpty ? "[no headers]" : text)
-            .font(.system(.caption, design: .monospaced))
-            .textSelection(.enabled)
-            .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-/// Decodes the base64 body OFF the main thread, truncates very large bodies, and
-/// falls back to a hex preview for non-UTF-8 content. Display handling only.
-struct BodyView: View {
-    let b64: String?
-    let dropped: Bool
-    @State private var rendered: String = ""
-
-    var body: some View {
-        Group {
-            if dropped {
-                Text("[body dropped by the capture filter; metadata retained]")
-                    .italic().foregroundStyle(.secondary)
-            } else if b64 == nil {
-                Text("[no body]").italic().foregroundStyle(.secondary)
+    @ViewBuilder private var content: some View {
+        switch tab {
+        case .request:
+            RawTextView(text: requestText)
+        case .response:
+            if detail.captureStatus == "pending" {
+                centered { HStack { ProgressView().controlSize(.small); Text("Waiting for response...") } }
+            } else if detail.captureStatus == "error" {
+                centered { Text("Request errored; no response captured.").foregroundStyle(.red) }
             } else {
-                Text(rendered)
-                    .font(.system(.body, design: .monospaced))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                RawTextView(text: responseText)
             }
         }
-        .task(id: b64) { rendered = await Self.decode(b64) }
     }
 
-    static func decode(_ b64: String?) async -> String {
-        guard let b64, let data = Data(base64Encoded: b64) else { return "" }
+    private func centered<C: View>(@ViewBuilder _ content: () -> C) -> some View {
+        content()
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding()
+    }
+
+    private func load() async {
+        requestText = detail.reqHeadersRaw + "\n\n"
+            + (await Self.decodedBody(detail.reqBodyB64, dropped: detail.reqBodyDropped))
+        if detail.captureStatus == "complete" {
+            responseText = detail.respHeadersRaw + "\n\n"
+                + (await Self.decodedBody(detail.respBodyB64, dropped: detail.respBodyDropped))
+        } else {
+            responseText = ""
+        }
+    }
+
+    /// Decodes the base64 body OFF the main thread, truncates very large bodies,
+    /// and falls back to a hex preview for non-UTF-8 content. Display only.
+    static func decodedBody(_ b64: String?, dropped: Bool) async -> String {
+        if dropped { return "[body dropped by the capture filter; metadata retained]" }
+        guard let b64 else { return "[no body]" }
+        guard let data = Data(base64Encoded: b64) else { return "" }
         return await Task.detached(priority: .utility) { () -> String in
             let cap = 512 * 1024
             let slice = data.count > cap ? data.prefix(cap) : data
@@ -112,5 +90,43 @@ struct BodyView: View {
             let hex = slice.prefix(4096).map { String(format: "%02x", $0) }.joined()
             return "[binary, \(data.count) bytes; hex preview]\n" + hex
         }.value
+    }
+}
+
+/// A read-only, selectable, scrollable monospaced text view. Unlike SwiftUI Text,
+/// it paints large content immediately: on update we set the string and force a
+/// full layout + display, so a large body does not stay blank until an interaction.
+struct RawTextView: NSViewRepresentable {
+    let text: String
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scroll = NSTextView.scrollableTextView()
+        scroll.hasVerticalScroller = true
+        scroll.drawsBackground = false
+        if let tv = scroll.documentView as? NSTextView {
+            tv.isEditable = false
+            tv.isSelectable = true
+            tv.isRichText = false
+            tv.drawsBackground = false
+            tv.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+            tv.textContainerInset = NSSize(width: 8, height: 8)
+            tv.textContainer?.widthTracksTextView = true
+            tv.isVerticallyResizable = true
+        }
+        return scroll
+    }
+
+    func updateNSView(_ scroll: NSScrollView, context: Context) {
+        guard let tv = scroll.documentView as? NSTextView else { return }
+        if tv.string != text {
+            tv.string = text
+            // Force glyph layout + a redraw so the full body paints now, without
+            // waiting for a selection/scroll to trigger it.
+            if let lm = tv.layoutManager, let tc = tv.textContainer {
+                lm.ensureLayout(for: tc)
+            }
+            tv.needsLayout = true
+            tv.needsDisplay = true
+        }
     }
 }

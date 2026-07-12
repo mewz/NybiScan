@@ -224,6 +224,11 @@ Terse log of locked decisions. Newest context lives in CLAUDE.md.
   (DetailUIState in Kit); selecting a row updates the selection but never the tab,
   so it persists across selection (same user-owned pattern as the divider). The
   select() nil-flap was removed so the detail view is not destroyed/reset.
+- The raw request/response body is rendered with an NSTextView (RawTextView
+  NSViewRepresentable), not a SwiftUI Text in a ScrollView: SwiftUI Text did not
+  get a fresh layout/redraw when a large decoded string was assigned async, so
+  large bodies stayed blank until a selection/scroll forced a redraw. NSTextView
+  handles large text; on update we set the string and force layout + display.
 - CA export is surfaced in the UI (Options): POST /ca/export wraps the existing
   core export and returns the PUBLIC cert only (PEM or DER, base64); the GUI owns
   the save dialog, the core owns the cert material, and the private key NEVER
