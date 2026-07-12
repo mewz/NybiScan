@@ -100,8 +100,11 @@ hermetic and never touch the real user config or CA.
    core-derived `extension` field (schema v3), a sortable columnar Table, a
    reusable tabbed Request/Response detail (for Plan 4 Bench reuse), a user-owned
    vertical split, proxy auto-start (default on), persistent detail tab, and CA
-   export from the UI. Plan 3 COMPLETE. NEXT is Plan 3.5 (Makefile + build docs),
-   then Plan 4 (Bench).
+   export from the UI. Plan 3 COMPLETE.
+3.5. Build orchestration (done): a root Makefile (make setup/test/build/run) is the
+   canonical surface across both toolchains; README build diagram; grep-guard checks
+   README make-targets exist. Future plan gates run `make test`. NEXT is Plan 4
+   (Bench).
 4. Bench (replay) + match/replace + decompress.
 5. Dashboard site map + scoped spider.
 6. MCP server over the core.

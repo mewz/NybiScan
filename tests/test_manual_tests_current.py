@@ -20,9 +20,27 @@ from nybiscan.api.app import create_app
 from nybiscan.api.state import AppState
 from nybiscan.cli.__main__ import build_parser
 
-MANUAL_TESTS = Path(__file__).resolve().parents[1] / "MANUAL_TESTS.md"
+_ROOT = Path(__file__).resolve().parents[1]
+MANUAL_TESTS = _ROOT / "MANUAL_TESTS.md"
+README = _ROOT / "README.md"
+MAKEFILE = _ROOT / "Makefile"
 
 _BACKTICK = re.compile(r"`([^`]+)`")
+_MAKE_TARGET_DEF = re.compile(r"^([A-Za-z0-9][A-Za-z0-9_.-]*):", re.MULTILINE)
+
+
+def _inline_spans(text: str):
+    """Backticked inline spans from prose only. Skips fenced code blocks and
+    parses per line, so fence backticks never desync inline-span pairing (a
+    Markdown inline code span never crosses a line)."""
+    in_fence = False
+    for line in text.splitlines():
+        if line.lstrip().startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        yield from _BACKTICK.findall(line)
 
 
 # ----- what the doc references ----------------------------------------------
@@ -30,7 +48,7 @@ _BACKTICK = re.compile(r"`([^`]+)`")
 
 def _referenced(text: str):
     cli, endpoints = set(), set()
-    for span in _BACKTICK.findall(text):
+    for span in _inline_spans(text):
         span = span.strip()
         if span.startswith("nybiscan"):
             tokens = span.split()[1:]  # drop the program name
@@ -126,4 +144,40 @@ def test_manual_tests_reference_real_commands_and_endpoints():
     assert not bad_endpoints, (
         "MANUAL_TESTS.md references API endpoints that do not exist: "
         f"{bad_endpoints}. Real routes: {sorted(real_routes)}"
+    )
+
+
+# ----- make-target guard ----------------------------------------------------
+
+
+def _referenced_make_targets(text: str) -> set:
+    """Backticked `make <target>` references in the docs (fenced blocks ignored)."""
+    targets = set()
+    for span in _inline_spans(text):
+        parts = span.strip().split()
+        if len(parts) >= 2 and parts[0] == "make":
+            targets.add(parts[1])
+    return targets
+
+
+def _real_make_targets() -> set:
+    return set(_MAKE_TARGET_DEF.findall(MAKEFILE.read_text()))
+
+
+def test_readme_make_targets_exist():
+    """Every `make <target>` referenced in README/MANUAL_TESTS is a real Makefile
+    target. Introspects the live Makefile; no hardcoded duplicate list."""
+    assert MAKEFILE.exists(), "Makefile is missing"
+    real = _real_make_targets()
+    assert {"setup", "test", "build", "run"} <= real, f"core make targets missing: {sorted(real)}"
+
+    referenced = _referenced_make_targets(README.read_text()) | _referenced_make_targets(
+        MANUAL_TESTS.read_text()
+    )
+    assert referenced, "no `make <target>` references found in README/MANUAL_TESTS"
+
+    bad = sorted(t for t in referenced if t not in real)
+    assert not bad, (
+        f"docs reference make targets that do not exist: {bad}. "
+        f"Real targets: {sorted(real)}"
     )
