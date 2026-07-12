@@ -133,6 +133,42 @@ def test_delete_tab(client):
     assert client.get("/bench/tabs", headers=AUTH).json() == []
 
 
+@pytest.mark.parametrize("passphrase", [None, "close-secret-pass"])
+def test_delete_tab_removes_its_history(tmp_path, passphrase):
+    # Closing a Bench tab must leave NO orphaned bench_history rows (nothing kept
+    # after close). Verified on plaintext AND encrypted bundles, since FK enforcement
+    # / cascade behavior differs and the delete must not depend on it.
+    c = TestClient(create_app(AppState(TOKEN)))
+    with c:
+        body = {"path": str(tmp_path / "d.nybiscan"), "name": "D"}
+        if passphrase:
+            body["passphrase"] = passphrase
+        assert c.post("/projects", json=body, headers=AUTH).status_code == 200
+
+        origin = Origin()
+        tab = c.post("/bench/tabs", json={}, headers=AUTH).json()
+        c.patch(
+            f"/bench/tabs/{tab['id']}",
+            json={"conn_host": "127.0.0.1", "conn_port": origin.port, "conn_tls": False,
+                  "raw_request": "GET /json HTTP/1.1\r\nHost: h\r\n\r\n"},
+            headers=AUTH,
+        )
+        for _ in range(3):
+            assert c.post(f"/bench/tabs/{tab['id']}/send", headers=AUTH).json()["status"] == 200
+        origin.stop()
+        assert len(c.get(f"/bench/tabs/{tab['id']}/history", headers=AUTH).json()) == 3
+
+        assert c.delete(f"/bench/tabs/{tab['id']}", headers=AUTH).json() == {"deleted": True}
+
+        # Tab gone AND no history rows orphaned (asserted directly against the table).
+        assert c.get("/bench/tabs", headers=AUTH).json() == []
+        conn = c.app.state.app_state.project.read_conn
+        remaining = conn.execute(
+            "SELECT COUNT(*) FROM bench_history WHERE tab_id = ?", (tab["id"],)
+        ).fetchone()[0]
+        assert remaining == 0
+
+
 def test_history_appends_in_order_and_persists_across_reopen(client, tmp_path):
     origin = Origin()  # multi-shot: serves each of several sends
     tab = client.post("/bench/tabs", json={}, headers=AUTH).json()
