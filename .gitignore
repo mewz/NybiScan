@@ -5,6 +5,31 @@ __pycache__/
 build/
 dist/
 .pytest_cache/
-# local test bundles
-/tmp_*.nybiscan/
-*.nybiscan/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# local/scratch project bundles (keep working projects outside the repo;
+# un-ignore a specific example bundle later with e.g. !examples/sample.nybiscan/)
+/*.nybiscan/
+tmp_*.nybiscan/
+
+# secrets / keys — never commit (CA private keys, tokens, env)
+*.pem
+*.key
+*.p12
+.env
+.env.*
+runtime.json
+
+# macOS
+.DS_Store
+
+# Swift / SwiftPM (gui)
+gui/.build/
+gui/.swiftpm/
+gui/NybiScan.app/
+**/*.xcodeproj
+DerivedData/
+# note: DO commit gui/Package.resolved (it's an app lockfile, not an artifact)

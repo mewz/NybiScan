@@ -11,34 +11,82 @@ detection, exfiltrating data, or attacking out-of-scope hosts, and never will.
 
 ## Status
 
-Plans 1 and 2 are done: the headless Python core and persistence layer, the
-localhost control API, and the in-process mitmproxy-based capture engine with the
-CA lifecycle and a live history WebSocket. No GUI yet (Plan 3). See CLAUDE.md for
-the architecture and the full phased plan, and DECISIONS.md for locked decisions.
+Plans 1, 2, and 3 are done: the headless Python core and persistence layer, the
+localhost control API, the in-process mitmproxy-based capture engine with the CA
+lifecycle and a live history WebSocket, and a native macOS SwiftUI front end (a
+thin client of the control API) with project new/open, a live history list,
+request/response detail, and proxy control. See CLAUDE.md for the architecture and
+phased plan, and DECISIONS.md for locked decisions.
 
-To intercept https you install and trust the NybiScan CA once (`nybiscan ca
-generate --global`, `nybiscan ca export ...`, then add it to your keychain or
-browser). The capture proxy and the control API are separate listeners on
-separate ports; only the control API is bearer-token authenticated.
+## Requirements
 
-## Architecture
+- macOS with a Swift toolchain (Xcode) to build the GUI.
+- Python 3.12+ for the core (built and verified on 3.12).
+- The GUI is currently a DEVELOPER artifact launched from the cloned repo. It is
+  not yet a standalone distributable app (self-contained bundling, code-signing,
+  and notarization are a later packaging plan).
 
-- `src/nybiscan/core/` OS-agnostic core: schemas, crypto, storage, project
-  lifecycle. All business logic lives here. Imports no GUI/API frameworks.
-- `src/nybiscan/api/` localhost control API (FastAPI). A thin layer over core.
-- `src/nybiscan/cli/` command-line driver for the core.
-- `gui/` future Swift/SwiftUI client (placeholder).
+## Running the macOS GUI app
 
-## Dev setup
+NybiScan.app is a developer artifact launched from the cloned repo. The GUI spawns
+the Python core and then drives everything over the control API. It locates the
+core by walking up from its executable to `<repo>/.venv/bin/nybiscan`, so a Python
+environment MUST exist at the repo root named EXACTLY `.venv`. The name and
+location matter.
+
+First, set up the core environment once (from the repo root):
 
 ```
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
-pytest -v
+```
+
+Build the app:
+
+```
+cd gui && ./scripts/make_app.sh
+```
+
+Launch it:
+
+```
+open NybiScan.app
+```
+
+`scripts/make_app.sh` builds the Swift executable and wraps it in a clickable
+`NybiScan.app` (Info.plist + binary). If the app reports "NybiScan core not
+found", the `.venv` is missing or misnamed at the repo root; create it with the
+setup commands above. (A `make setup` convenience layer is planned for a later
+pass; it does not exist yet.)
+
+## Architecture
+
+- `src/nybiscan/core/` OS-agnostic core: schemas, crypto, storage, project
+  lifecycle, proxy engine, CA. All business logic lives here. Imports no GUI/API
+  frameworks.
+- `src/nybiscan/api/` localhost control API (FastAPI). A thin layer over core.
+- `src/nybiscan/cli/` command-line driver for the core.
+- `gui/` native macOS SwiftUI app, a THIN CLIENT of the localhost control API. It
+  spawns the core once, then drives project/history/proxy/config over HTTP +
+  WebSocket. It holds no business logic (no traffic parsing, body filtering, or
+  store access). Split into a testable `NybiScanKit` library and a `NybiScanApp`
+  window.
+
+To intercept https you install and trust the NybiScan CA once (see "Trusting the
+CA" below). The capture proxy and the control API are separate listeners on
+separate ports; only the control API is bearer-token authenticated.
+
+## Tests
+
+```
+pytest -q                 # Python core + API (run from the repo root, venv active)
+cd gui && swift test      # Swift client logic
 ```
 
 ## CLI
+
+The core is also fully usable headless:
 
 ```
 nybiscan new  /path/to/proj.nybiscan --name MyProj [--encrypt] [--scope example.com]
@@ -63,3 +111,22 @@ nybiscan proxy stop
 
 An encrypted project cannot be recovered without its passphrase. There is no
 backdoor.
+
+## Trusting the CA (for https interception)
+
+After exporting the public cert (`nybiscan ca export /tmp/nybiscan-ca.crt`), trust
+it so your browser accepts the intercepted TLS. Only the public cert is trusted;
+the private key never leaves `~/.nybiscan/ca`.
+
+```
+# macOS login keychain (per user; may prompt for your password)
+security add-trusted-cert -r trustRoot \
+  -k ~/Library/Keychains/login.keychain-db /tmp/nybiscan-ca.crt
+```
+
+For system-wide trust instead, run it with sudo against the System keychain:
+`sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain /tmp/nybiscan-ca.crt`.
+
+Firefox uses its own trust store, not the system keychain. In Firefox, import the
+same `/tmp/nybiscan-ca.crt` via Settings -> Privacy & Security -> Certificates ->
+View Certificates -> Authorities -> Import, and trust it to identify websites.

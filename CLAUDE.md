@@ -52,7 +52,9 @@ to evade detection, exfiltrate data, or attack out-of-scope hosts.
 ## CA model (built in Plan 2)
 
 Implemented in `core/ca.py`, driven by CLI `nybiscan ca ...`. The global CA dir
-is overridable via `NYBISCAN_CA_DIR` (tests use this to stay hermetic).
+is overridable via `NYBISCAN_CA_DIR`, and the app-support dir (config.toml,
+runtime.json) via `NYBISCAN_SUPPORT_DIR`. Tests set both to temp dirs to stay
+hermetic and never touch the real user config or CA.
 
 - CA material is GLOBAL by default (`~/.nybiscan/ca/`) so the user trusts a CA
   once and reuses it across projects. Stored history is plaintext HTTP and
@@ -90,7 +92,16 @@ is overridable via `NYBISCAN_CA_DIR` (tests use this to stay hermetic).
 2.5. Manual-test checklist system (done): MANUAL_TESTS.md plus a grep-guard test
    (tests/test_manual_tests_current.py) that verifies referenced commands and
    endpoints still exist. Docs infrastructure only, no behavior change.
-3. macOS Swift/SwiftUI GUI (history). NEXT.
+3. macOS Swift/SwiftUI GUI (done): SwiftPM package under gui/ (testable
+   NybiScanKit library + thin NybiScanApp window). Thin client over the control
+   API: project new/open, live history (backfill + WebSocket), pending-aware
+   detail, options (proxy control + read-only status/CA info). Added additive API
+   GET/POST /config and GET /ca/info. Addendum completed the history UI: a
+   core-derived `extension` field (schema v3), a sortable columnar Table, a
+   reusable tabbed Request/Response detail (for Plan 4 Bench reuse), a user-owned
+   vertical split, proxy auto-start (default on), persistent detail tab, and CA
+   export from the UI. Plan 3 COMPLETE. NEXT is Plan 3.5 (Makefile + build docs),
+   then Plan 4 (Bench).
 4. Bench (replay) + match/replace + decompress.
 5. Dashboard site map + scoped spider.
 6. MCP server over the core.

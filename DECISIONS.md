@@ -112,3 +112,144 @@ Terse log of locked decisions. Newest context lives in CLAUDE.md.
   _IncludedRouter.original_router so the WebSocket route is seen) to check that
   every referenced command/endpoint still exists. Existence only, not behavior.
   No duplicate hardcoded list.
+
+## Locked (Plan 3)
+
+- First native front end is a macOS SwiftUI app under gui/, a SwiftPM package
+  with a testable NybiScanKit library (models, API client, runtime.json reader,
+  WebSocket auth/decode, history model, health poller, core-process supervisor)
+  and a thin NybiScanApp executable (the window). swift build / swift test are
+  CLI-driven. scripts/make_app.sh wraps the built binary in a clickable
+  NybiScan.app (Info.plist + binary); a real distributable .app that locates a
+  bundled Python core is a later concern.
+- Thin client: zero business logic in Swift. The ONLY shell-out is spawning the
+  core (nybiscan serve) plus lifecycle signals to that owned process. Every app
+  operation goes through the control API. runtime.json (port + token) is read
+  fresh on every connect; the control-API port is never cached or hardcoded.
+  WebSocket auth is the Authorization header or the nybiscan Sec-WebSocket-Protocol
+  subprotocol, never a query param.
+- Core supervision: the GUI spawns the core via NYBISCAN_BIN (default the repo
+  venv nybiscan; repo-dev launch only), polls for runtime.json then GET /health.
+  On quit (Cmd-Q via applicationWillTerminate, or SIGTERM/SIGINT via a dispatch
+  signal source), it SIGTERMs the core (drain + WAL checkpoint) and escalates to
+  SIGKILL after a grace period. Verified: no orphaned core after quit.
+- Additive API for the GUI (thin wrappers over existing core, tested):
+  GET /config + POST /config/acknowledge (authorized-use flag, owned by the core,
+  not the client; /config also prefills the options listen fields) and read-only
+  GET /ca/info (which CA resolves, without generating). Core helpers added:
+  ca.resolve_existing_confdir (non-generating) and a NYBISCAN_SUPPORT_DIR env
+  override on config.app_support_dir so config/runtime tests stay hermetic.
+- Options panel scope: interactive proxy start/stop + listen ip/port; read-only
+  proxy status and CA info. Filters, match/replace, and decompress are OMITTED
+  (no backing config state yet; they return when actually configurable).
+- Detail bodies are base64 in the API; the GUI decodes OFF the main thread, caps
+  very large bodies, and falls back to a hex preview for non-UTF-8. Display
+  handling only, not business logic.
+
+## Locked (Plan 3 cleanup)
+
+- ONE project README at the repo root owns the whole story (both toolchains, core
+  + GUI relationship, run/launch). gui/README.md is reduced to a one-line pointer;
+  no per-directory README duplicates content.
+- Launch contract: NybiScan.app is a DEVELOPER artifact launched from the cloned
+  repo. It REQUIRES a Python environment at the repo root named exactly `.venv`;
+  the app locates the core by walking up to `<repo>/.venv/bin/nybiscan`. When the
+  core binary cannot be located, the app fails fast with an ACTIONABLE error
+  (CoreProcess.notFoundMessage) naming the expected `.venv` path and the setup
+  commands, distinct from the health-timeout message (which only fires after the
+  binary was located and launched). Standalone self-contained bundling (no repo
+  `.venv`) is deferred to a later packaging plan.
+
+## Locked (Plan 3 addendum: columnar history + tabbed detail)
+
+- Core-vs-client derivation principle: a field lives in CORE if a second thin
+  client would have to reimplement logic to match it (define once, all clients
+  read the same value); it may live in the CLIENT if a second client would
+  trivially re-derive it as pure display.
+- `extension` (file extension parsed from the URL path) is CORE: real parsing edge
+  cases (query-strip, last-segment-only, dotfiles, empty candidate, numeric
+  version/date rejection, length cap) defined once in `capture.parse_extension`,
+  stored on the record, exposed in `/history`. Plan 5 spider / Plan 6 MCP will
+  query it. Schema v2 -> v3 adds the `extension` column; `migrate()` generalized
+  to add any missing post-v1 column (tested v1->v3 and v2->v3, plaintext and
+  encrypted-through-cipher).
+- `has_params` (URL has a query string) is CLIENT-derived (Swift `hasParams`);
+  trivial display, nothing downstream queries it, no core column. `isSecure`
+  (https) and `statusSort` (Optional status made sortable) are likewise
+  client-only display derivations.
+- History list is a sortable SwiftUI Table; re-sort is throttled (not per WS
+  event) and selection is bound to a stable entry id so an open detail does not
+  jump while rows stream. Legitimately-empty fields render blank.
+- The request/response detail is a REUSABLE `RequestResponseView` (Request /
+  Response tabs, Raw only) built with an `editable` flag reserved so Plan 4 Bench
+  reuses the same component with an editable Request tab.
+
+## Locked (Plan 3 layout addendum)
+
+- The history UI is a vertical (top/bottom) split: the table spans the full window
+  width on top, the detail spans the full width below. Data-table + inspector
+  model, not a navigation master-detail sidebar.
+- The divider is a CUSTOM user-owned split, not SwiftUI `VSplitView`. `VSplitView`
+  derives its position from child content sizes, so selecting a row (detail grows
+  from the empty state) snapped the divider. Instead the bottom (detail) pane's
+  height is a single `@State` fraction written ONLY by the drag gesture; the
+  0.5 default applies once at launch and thereafter the divider holds where the
+  user dragged it. Selection changes the detail pane's CONTENT, never its HEIGHT
+  (DetailView identity is stable; its height comes from the fraction). No
+  selection, deselection, reselection, or pending/complete transition ever moves
+  the divider.
+- The detail pane is ALWAYS present (stable layout), blank when nothing is
+  selected. The divider drags freely and both panes collapse to a sliver at both
+  extremes (no tall minimum blocks the scan-then-read workflow).
+- Column widths are by importance/content: Host has a hard min floor (~220pt) that
+  fits a full https domain before truncating; Host and URL flex to absorb extra
+  window width; MIME/IP/Time are medium-fixed (fit application/javascript,
+  255.255.255.255, the timestamp); Method/Status/Length/Ext/# are narrow fixed and
+  never steal width from Host/URL.
+- Deferred: column REORDERING (drag to rearrange), and cross-launch PERSISTENCE of
+  divider position and column widths. Within-session stability is the requirement;
+  cross-launch is a later pass.
+
+## Locked (Plan 3 final cleanup: auto-start + tab memory + CA export)
+
+- `auto_start_proxy` is a global config flag, DEFAULT ON, owned by the core
+  (config.py) and exposed via GET /config + POST /config. On project open the GUI
+  reads it and, if on, calls the existing /proxy/start with the configured listen
+  ip/port. Auto-start subscribes the live history stream BEFORE starting capture so
+  early requests are not missed. It fails VISIBLY ("Auto-start proxy failed: ...")
+  on unmet preconditions, distinct from "flag off = no attempt". If auto-start had
+  to generate a new global CA (none existed), a non-blocking notice points the user
+  to export + trust it. No proxy logic in the GUI.
+- The active detail tab (Request/Response) is model-owned view state
+  (DetailUIState in Kit); selecting a row updates the selection but never the tab,
+  so it persists across selection (same user-owned pattern as the divider). The
+  select() nil-flap was removed so the detail view is not destroyed/reset.
+- The raw request/response body is rendered with an NSTextView (RawTextView
+  NSViewRepresentable), not a SwiftUI Text in a ScrollView: SwiftUI Text did not
+  get a fresh layout/redraw when a large decoded string was assigned async, so
+  large bodies stayed blank until a selection/scroll forced a redraw. NSTextView
+  handles large text; on update we set the string and force layout + display.
+- CA export is surfaced in the UI (Options): POST /ca/export wraps the existing
+  core export and returns the PUBLIC cert only (PEM or DER, base64); the GUI owns
+  the save dialog, the core owns the cert material, and the private key NEVER
+  leaves the core (test-guarded). CA generate/import stay CLI-only. The UI notes
+  that Firefox uses its own trust store.
+
+## Backlog (deferred, do not build yet)
+
+- Binary-in-history VIEW FILTER (hide binary/image/css rows like Burp's filter
+  bar): needs a display-filter (hide but still capture/store) vs capture-filter
+  (do not record) decision. Lands with the editable-filters options UI.
+- History columns/detail deferred: Comment (needs a write surface + storage),
+  Edited (only meaningful once Bench exists), Cookies (Plan 5 session work),
+  Headers/Hex detail sub-tabs (Raw only for now), and any request editing in the
+  detail (that is Bench, Plan 4).
+
+- Plan 3.5: a root Makefile (`make setup` creates `.venv` at the exact
+  path/name; `make test` runs pytest + swift test; `make build` runs swift build +
+  make_app.sh; `make run` launches), a build-architecture diagram in the README,
+  and extending the grep-guard to check that README make-targets exist in the
+  Makefile. Until then, do NOT document Makefile targets as usable.
+- Packaging plan: bundle Python + core + SQLCipher into NybiScan.app
+  (self-contained, no repo `.venv`), code-sign + notarize, so the app launches
+  outside the repo by double-click.

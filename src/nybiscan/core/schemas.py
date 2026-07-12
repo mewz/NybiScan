@@ -55,6 +55,7 @@ class HistoryRecord(BaseModel):
     port: int = 80
     method: str = "GET"
     url: str = "/"  # path + query
+    extension: Optional[str] = None  # file extension parsed from the URL path
 
     # request
     req_headers_raw: str = ""

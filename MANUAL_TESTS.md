@@ -163,3 +163,159 @@ stale manual-test step is a bug, not a documentation nicety. Bump the item's
   and subprotocol connections are accepted and then stream entry_created and
   entry_updated events.
 - Verified: Plan 2.5
+
+---
+
+## Plan 3 - macOS Swift/SwiftUI GUI
+
+Run from the repo (repo-dev launch). The GUI spawns the Python core; point it at
+the venv core binary with NYBISCAN_BIN. Build the automated pieces first, then the
+app.
+
+### 3.1 Swift build and unit tests
+- What: the client library and its tests build and pass from the CLI.
+- Command: from gui/, run swift build and swift test.
+- Expected: both succeed; the XCTest suite is green (API client request/decode,
+  runtime.json reader, WebSocket header/subprotocol auth, health poll timeout,
+  history model created-then-updated, core-process spawn errors).
+- Verified: Plan 3
+
+### 3.2 Build and launch the app
+- What: assemble and launch the windowed app; the core spawns and connects.
+- Command: from gui/, run scripts/make_app.sh, then open NybiScan.app. From the
+  repo the app finds ../.venv/bin/nybiscan automatically (no env needed); if you
+  move the .app out of the repo, set NYBISCAN_BIN to the nybiscan binary.
+- Expected: a window appears. The app clears any stale runtime.json, spawns the
+  core (nybiscan serve), polls `/health`, and reaches the project screen. If the
+  core binary cannot be found, the app shows a clear "could not start the core"
+  error instead of hanging.
+- Verified: Plan 3
+
+### 3.3 First-launch authorized-use gate
+- What: the acknowledgment gates use and persists via the core.
+- Command: on a fresh support dir (unset ack), launch the app; accept the gate.
+  The app reads `/config` on launch and POSTs `/config/acknowledge` on accept.
+- Expected: the authorized-use screen appears when authorized_use_ack is false;
+  after accepting, the app proceeds and does not show the gate again on relaunch
+  (the flag persisted to the core's config.toml).
+- Verified: Plan 3
+
+### 3.4 New, encrypted, and open projects
+- What: project lifecycle via the API.
+- Command: create a new plaintext project (name + location); create a new
+  encrypted project (passphrase); open an existing bundle; try opening an
+  encrypted bundle with the wrong passphrase.
+- Expected: plaintext and encrypted projects create and open; the wrong
+  passphrase surfaces the core's clear error (not a crash); the main window shows
+  the project name.
+- Verified: Plan 3
+
+### 3.5 Live capture streams into the columnar table
+- What: proxied traffic appears live in a spreadsheet-style table; pending flips
+  to complete.
+- Command: in Options, start the proxy on 127.0.0.1:8080 (`/proxy/start`); with
+  the NybiScan CA trusted (from Plan 2), browse an https site through the proxy.
+- Expected: the history table spans the FULL window width (top pane). Entries
+  appear live over the WebSocket in a sortable Table with columns #, Host (with a
+  lock icon for https), Method, URL, Status, Length, MIME, Ext, IP, Time. Host is
+  wide enough to show at least `https://www.something.com` without clipping and
+  URL/MIME are readable, while narrow columns (Status, Ext, Length, Method) stay
+  tight. Real metadata is populated; a 304 and a no-extension URL render BLANK
+  cells (not 0/null/broken). Clicking a column header sorts (Status, Method, Host,
+  Time, Length). A pending row is visible first and flips to a completed status
+  with mime/length. The "Live" indicator is green; if the core stops it shows
+  "Live updates disconnected". Under busy capture the table stays responsive
+  (throttled re-sort) and a selected row does not jump while new rows stream in.
+- Verified: Plan 3
+
+### 3.6 Tabbed detail, pending-aware and body-safe
+- What: a tabbed Request/Response detail renders below the table; pending and
+  binary handled.
+- Command: click a row; use the Request and Response tabs. Also click a
+  still-pending entry and a binary/image entry. The detail loads via
+  `/history/{entry_id}`.
+- Expected: the detail sits FULL WIDTH BELOW the table (bottom pane) and is blank
+  when nothing is selected. It shows a Request tab and a Response tab, each with
+  raw headers plus the decoded body. The active tab PERSISTS across selection:
+  switch to Response, then arrow up/down through rows and each row shows its
+  Response (the tab does not snap back to Request); switch to Request and it stays
+  Request. A still-pending Response tab shows a waiting state and then populates; a
+  dropped binary body shows a clear "body dropped" note; non-UTF-8 bodies show a
+  hex preview rather than crashing; the UI never blocks while decoding.
+- Large bodies render FULLY without interaction: select an entry with a large text
+  body (e.g. a ~250KB or ~460KB text/javascript response), open the Response tab.
+  The ENTIRE body paints immediately (no blank region below the first screenful),
+  with NO need to select text or scroll first. Arrowing between large responses
+  renders each fully without interaction, and the active tab still persists.
+- Verified: Plan 3
+
+### 3.10 Vertical layout and user-owned collapsible divider
+- What: the table/detail split is top/bottom with a draggable, collapsible
+  divider that only the user moves.
+- Command: launch (split is ~50/50). Click a row. Drag the divider down so the
+  detail is a sliver. Click several other rows; deselect and reselect; select a
+  still-pending row.
+- Expected: the divider drags freely up and down; the detail can be squashed to a
+  sliver (table nearly full window) AND expanded large (detail most of the
+  window); neither pane imposes a tall minimum that blocks this. Clicking the
+  FIRST row does NOT move the divider. After dragging to a sliver, clicking other
+  rows, deselecting/reselecting, and selecting a pending row all leave the divider
+  EXACTLY where the user put it (it never snaps back to 50/50 or auto-grows).
+  Selection changes only the detail CONTENT, never its height. (Cross-launch
+  persistence of the divider and column widths is deferred.)
+- Verified: Plan 3
+
+### 3.7 Options panel: proxy status and CA info
+- What: read-only status displays via the API.
+- Command: open Options; read proxy status and CA info (`/proxy/status`,
+  `/ca/info`).
+- Expected: proxy status shows running and ssl_insecure false in normal use; CA
+  info shows which CA resolves (project vs global), common name, and fingerprint.
+  No generate/import/export controls this plan.
+- Verified: Plan 3
+
+### 3.8 Quit leaves no orphan
+- What: clean shutdown of the spawned core.
+- Command: quit the app (Cmd-Q) or send it SIGTERM; then
+  pgrep -fl "nybiscan serve".
+- Expected: no orphaned core or mitmproxy process remains. The core received
+  SIGTERM, drained its writer, and checkpointed the WAL.
+- Verified: Plan 3
+
+### 3.9 Thin-client checks (code review)
+- What: confirm the GUI stays a thin client.
+- Command: review gui/Sources. Confirm the only shell-out is spawning the core
+  (CoreProcess) plus lifecycle signals; every app operation (project, history,
+  proxy, config, ca) is a control-API call; runtime.json is read fresh each
+  connect (no cached port); the control-API port is never hardcoded; WebSocket
+  auth uses the header/subprotocol, never a query param.
+- Expected: all hold. No traffic parsing, body filtering, or store access in Swift.
+- Verified: Plan 3
+
+### 3.11 Proxy auto-start on open
+- What: the proxy starts automatically on project open (default), controlled by a
+  global flag, and fails visibly if it cannot start.
+- Command: open a project (default flag on). Then in Options toggle
+  "Auto-start proxy on project open" off (writes via `/config`) and reopen. Then
+  turn it back on but occupy the listen port first (another listener on 8080) and
+  open a project. On a first-ever launch (no global CA yet), open a project.
+- Expected: with the flag on, opening a project auto-starts the proxy (via a
+  `/config` read + `/proxy/start`) and capture streams with NO manual Start; the
+  first requests are not missed (the live subscription connects before capture
+  begins). With the flag off, the proxy does NOT auto-start (manual behavior). If
+  auto-start cannot proceed (port in use), a clear visible "Auto-start proxy
+  failed:" error appears, not a silent non-start. On a first-ever launch a
+  non-blocking notice appears: a new CA was generated, export and trust it.
+- Verified: Plan 3
+
+### 3.12 Export and trust the CA from the UI
+- What: export the public CA cert from Options so HTTPS interception works.
+- Command: Options -> CA -> "Export PEM..." or "Export DER..." (calls
+  `/ca/export`), choose a location in the save panel. Trust the exported cert
+  (macOS keychain via security add-trusted-cert, or Firefox import). Browse an
+  https site through the proxy.
+- Expected: a PEM (.crt) or DER (.der) file containing the PUBLIC certificate is
+  written (never the private key). After trusting it, https sites capture without
+  cert errors. The note reminds that Firefox uses its own trust store. Generate
+  and import remain CLI-only.
+- Verified: Plan 3
