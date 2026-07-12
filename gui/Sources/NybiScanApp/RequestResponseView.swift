@@ -201,6 +201,8 @@ struct RawTextView: NSViewRepresentable {
             return menu
         }
 
-        @objc private func invokeSecondary() { parent.onSecondary?() }
+        // Menu actions fire on the main thread; isolate so the main-actor closure
+        // can be called without a nonisolated-context warning.
+        @MainActor @objc private func invokeSecondary() { parent.onSecondary?() }
     }
 }
