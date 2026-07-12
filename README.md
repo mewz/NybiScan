@@ -26,39 +26,46 @@ phased plan, and DECISIONS.md for locked decisions.
   not yet a standalone distributable app (self-contained bundling, code-signing,
   and notarization are a later packaging plan).
 
+## Build architecture
+
+NybiScan is a polyglot repo. A root Makefile orchestrates both toolchains so you
+do not have to remember which command runs where:
+
+```
+Makefile (repo root)                     orchestrates both toolchains
+  make setup  -> .venv at repo root + pip install -e ".[dev]" + swift package resolve
+  make test   -> pytest (Python core/api/cli) + swift test (Swift GUI)
+  make build  -> swift build + gui/scripts/make_app.sh
+  make run    -> open gui/NybiScan.app
+      |
+      +-- src/nybiscan/  Python core + api + cli   (pytest)
+      +-- gui/           Swift/SwiftUI app          (swift test)
+            +-- scripts/make_app.sh  bundles NybiScan.app
+```
+
 ## Running the macOS GUI app
 
-NybiScan.app is a developer artifact launched from the cloned repo. The GUI spawns
-the Python core and then drives everything over the control API. It locates the
-core by walking up from its executable to `<repo>/.venv/bin/nybiscan`, so a Python
-environment MUST exist at the repo root named EXACTLY `.venv`. The name and
-location matter.
+From a fresh clone, the blessed path is `make setup`, then `make build`, then
+`make run`; use `make test` any time to verify both suites.
 
-First, set up the core environment once (from the repo root):
+`make setup` creates the Python environment at the repo root and installs deps.
+`make build` compiles the Swift app and bundles a clickable `NybiScan.app`.
+`make run` launches it.
+
+The GUI is a developer artifact launched from the cloned repo. It spawns the
+Python core and drives everything over the control API, locating the core by
+walking up from its executable to `<repo>/.venv/bin/nybiscan`. So a Python
+environment MUST exist at the repo root named EXACTLY `.venv` (the name and
+location matter); `make setup` creates it there. If the app reports "NybiScan core
+not found", the `.venv` is missing or misnamed at the repo root: run `make setup`.
+
+The same steps by hand (what each make target does), if you prefer:
 
 ```
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
-```
-
-Build the app:
-
-```
+python3 -m venv .venv && source .venv/bin/activate && pip install -e ".[dev]"
 cd gui && ./scripts/make_app.sh
-```
-
-Launch it:
-
-```
 open NybiScan.app
 ```
-
-`scripts/make_app.sh` builds the Swift executable and wraps it in a clickable
-`NybiScan.app` (Info.plist + binary). If the app reports "NybiScan core not
-found", the `.venv` is missing or misnamed at the repo root; create it with the
-setup commands above. (A `make setup` convenience layer is planned for a later
-pass; it does not exist yet.)
 
 ## Architecture
 
@@ -78,6 +85,12 @@ CA" below). The capture proxy and the control API are separate listeners on
 separate ports; only the control API is bearer-token authenticated.
 
 ## Tests
+
+```
+make test                 # both suites (the canonical check)
+```
+
+Or each toolchain on its own:
 
 ```
 pytest -q                 # Python core + API (run from the repo root, venv active)

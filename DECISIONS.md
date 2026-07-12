@@ -253,3 +253,17 @@ Terse log of locked decisions. Newest context lives in CLAUDE.md.
 - Packaging plan: bundle Python + core + SQLCipher into NybiScan.app
   (self-contained, no repo `.venv`), code-sign + notarize, so the app launches
   outside the repo by double-click.
+
+## Locked (Plan 3.5: build orchestration)
+
+- A root Makefile is the canonical build/test surface across both toolchains. It
+  WRAPS existing mechanisms (pip, swift, gui/scripts/make_app.sh); it does not
+  reimplement builds or bundling. `make setup` creates `.venv` at the exact
+  repo-root path/name the GUI depends on.
+- `make test` (pytest + swift test) is THE gate command; future plan gates run it
+  instead of two separate commands.
+- The README build diagram shows both toolchains and is kept honest by a grep-guard
+  extension: every backticked `make <target>` in README/MANUAL_TESTS must be a real
+  target in the Makefile (introspected live, no duplicate list).
+- No `Package.resolved` yet: there are no external SwiftPM dependencies. If one is
+  added later, keep `Package.resolved` tracked (it is a lockfile, not an artifact).

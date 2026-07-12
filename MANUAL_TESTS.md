@@ -319,3 +319,32 @@ app.
   cert errors. The note reminds that Firefox uses its own trust store. Generate
   and import remain CLI-only.
 - Verified: Plan 3
+
+---
+
+## Plan 3.5 - Build orchestration + onboarding
+
+### 3.5.1 One-command test surface
+- What: the Makefile runs both toolchains.
+- Command: `make test`
+- Expected: pytest (Python core/api/cli) and swift test (Swift GUI) both run and
+  pass from a single command.
+- Verified: Plan 3.5
+
+### 3.5.2 Fresh-clone gate (the real test)
+- What: a stranger can go from clone to verified without knowing two toolchains.
+- Command: clone the repo into a fresh directory (no .venv, no gui/.build, no
+  NybiScan.app), then run only `make setup` and `make test`.
+- Expected: `make setup` creates .venv at the repo root and installs deps, resolves
+  SwiftPM; `make test` then reaches green from nothing. `make build` and `make run`
+  launch the app and it locates the core (because .venv is at the exact path).
+- Verified: Plan 3.5
+
+### 3.5.3 Make-target guard has teeth
+- What: a doc reference to a non-existent make target fails a test.
+- Command: temporarily add a backticked reference to a bogus target (make plus a
+  nonexistent name) to README.md and run the grep-guard
+  (pytest tests/test_manual_tests_current.py); revert after.
+- Expected: the guard FAILS while the bogus target is referenced and passes once
+  reverted, so stale make-target docs cannot ship.
+- Verified: Plan 3.5
