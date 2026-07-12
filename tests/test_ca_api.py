@@ -38,6 +38,33 @@ def test_ca_info_global(client):
     assert body["cn"]
 
 
+def test_ca_export_public_cert_only(client):
+    core_ca.generate_global()
+    import base64
+
+    # PEM
+    r = client.post("/ca/export", json={"format": "pem"}, headers=AUTH)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["format"] == "pem"
+    pem = base64.b64decode(body["cert_b64"])
+    assert pem.startswith(b"-----BEGIN CERTIFICATE-----")
+    # Never the private key.
+    assert b"PRIVATE KEY" not in pem
+
+    # DER
+    r = client.post("/ca/export", json={"format": "der"}, headers=AUTH)
+    der = base64.b64decode(r.json()["cert_b64"])
+    assert der[0] == 0x30  # DER SEQUENCE
+    assert b"PRIVATE KEY" not in der
+
+
+def test_ca_export_requires_auth_and_ca(client):
+    assert client.post("/ca/export", json={"format": "pem"}).status_code == 401
+    # No CA generated yet -> 404.
+    assert client.post("/ca/export", json={"format": "pem"}, headers=AUTH).status_code == 404
+
+
 def test_ca_info_project_override(client, tmp_path):
     core_ca.generate_global()
     proj = core_project.create_project(tmp_path / "p.nybiscan", name="P")

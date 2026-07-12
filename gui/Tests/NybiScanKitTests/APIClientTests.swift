@@ -97,7 +97,7 @@ final class APIClientTests: XCTestCase {
             case "/proxy/status":
                 return (200, Data(#"{"running":true,"listen_host":"127.0.0.1","listen_port":8080,"ca_dir":"/x","ssl_insecure":false}"#.utf8))
             case "/config":
-                return (200, Data(#"{"authorized_use_ack":false,"default_listen_ip":"127.0.0.1","default_listen_port":8080}"#.utf8))
+                return (200, Data(#"{"authorized_use_ack":false,"auto_start_proxy":true,"default_listen_ip":"127.0.0.1","default_listen_port":8080}"#.utf8))
             case "/ca/info":
                 return (200, Data(#"{"scope":"global","exists":true,"confdir":"/g","cn":"mitmproxy","fingerprint_sha256":"ab","not_after":"2030"}"#.utf8))
             default:
@@ -110,10 +110,32 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(status.sslInsecure, false)
         let cfg = try await client.getConfig()
         XCTAssertEqual(cfg.authorizedUseAck, false)
+        XCTAssertEqual(cfg.autoStartProxy, true)  // decodes the value
         XCTAssertEqual(cfg.defaultListenPort, 8080)
         let ca = try await client.caInfo()
         XCTAssertEqual(ca.scope, "global")
         XCTAssertEqual(ca.cn, "mitmproxy")
+    }
+
+    func testUpdateConfigHitsPostConfig() async throws {
+        StubURLProtocol.responder = { _ in
+            (200, Data(#"{"authorized_use_ack":false,"auto_start_proxy":false,"default_listen_ip":"127.0.0.1","default_listen_port":8080}"#.utf8))
+        }
+        let cfg = try await makeClient().updateConfig(autoStartProxy: false)
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/config")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.httpMethod, "POST")
+        XCTAssertFalse(cfg.autoStartProxy)
+    }
+
+    func testExportCAHitsPostAndDecodes() async throws {
+        StubURLProtocol.responder = { _ in
+            (200, Data(#"{"format":"pem","suggested_filename":"nybiscan-ca.crt","cert_b64":"YWJj"}"#.utf8))
+        }
+        let export = try await makeClient().exportCA(format: "pem")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/ca/export")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.httpMethod, "POST")
+        XCTAssertEqual(export.suggestedFilename, "nybiscan-ca.crt")
+        XCTAssertEqual(export.certData, Data("abc".utf8))  // YWJj -> abc
     }
 
     func testNon2xxThrowsControlAPIError() async {

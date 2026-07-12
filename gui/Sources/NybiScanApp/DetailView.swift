@@ -9,7 +9,7 @@ struct DetailView: View {
                 Text("\(d.method) \(d.scheme)://\(d.host):\(d.port)\(d.url)")
                     .font(.headline).textSelection(.enabled)
                     .padding([.top, .horizontal])
-                RequestResponseView(detail: d)
+                RequestResponseView(detail: d, tab: $model.detailUI.tab)
             }
         } else {
             Text("Select a request")

@@ -32,8 +32,48 @@ public struct HealthInfo: Codable, Sendable, Equatable {
 
 public struct ConfigInfo: Codable, Sendable, Equatable {
     public let authorizedUseAck: Bool
+    public let autoStartProxy: Bool
     public let defaultListenIp: String
     public let defaultListenPort: Int
+}
+
+public struct CaExport: Codable, Sendable, Equatable {
+    public let format: String
+    public let suggestedFilename: String
+    public let certB64: String
+
+    public var certData: Data? { Data(base64Encoded: certB64) }
+}
+
+/// The active tab in the request/response detail. Kept in model state so it
+/// persists across row selection (selection changes CONTENT, not the tab).
+public enum DetailTab: String, Sendable, Equatable, CaseIterable {
+    case request
+    case response
+}
+
+/// The detail pane's persistent UI state. select() updates the selected row but
+/// NEVER changes the active tab, so arrow-key scanning keeps the same tab.
+public struct DetailUIState: Sendable, Equatable {
+    public var tab: DetailTab = .request
+    public private(set) var selectedId: Int?
+
+    public init(tab: DetailTab = .request, selectedId: Int? = nil) {
+        self.tab = tab
+        self.selectedId = selectedId
+    }
+
+    public mutating func select(_ id: Int) {
+        selectedId = id  // tab intentionally untouched
+    }
+}
+
+/// Whether project-open should auto-start the proxy. Decision lives in Kit so it
+/// is testable; AppModel calls it and drives the existing proxy-start API.
+public enum AutoStart {
+    public static func shouldStart(_ config: ConfigInfo?) -> Bool {
+        config?.autoStartProxy ?? false
+    }
 }
 
 public struct ProjectInfo: Codable, Sendable, Equatable {
@@ -200,4 +240,14 @@ public struct ProxyStartPayload: Encodable, Sendable {
     public init(ip: String?, port: Int?, sslInsecure: Bool = false) {
         self.ip = ip; self.port = port; self.sslInsecure = sslInsecure
     }
+}
+
+public struct UpdateConfigPayload: Encodable, Sendable {
+    public let autoStartProxy: Bool?
+    public init(autoStartProxy: Bool?) { self.autoStartProxy = autoStartProxy }
+}
+
+public struct CaExportPayload: Encodable, Sendable {
+    public let format: String
+    public init(format: String) { self.format = format }
 }

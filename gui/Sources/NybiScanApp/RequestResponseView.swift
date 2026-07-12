@@ -6,28 +6,24 @@ import NybiScanKit
 /// Request tab and the resulting Response. Raw view only for now (Headers/Hex
 /// sub-tabs are deferred).
 struct RequestResponseView: View {
-    enum Side: String, CaseIterable, Identifiable {
-        case request = "Request"
-        case response = "Response"
-        var id: String { rawValue }
-    }
-
     let detail: HistoryDetail
+    // The active tab lives in model state (passed as a binding) so it PERSISTS
+    // across row selection: selecting a new row changes the content, not the tab.
+    @Binding var tab: DetailTab
     var editable: Bool = false  // reserved for Bench (Plan 4); ignored here
-
-    @State private var side: Side = .request
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker("", selection: $side) {
-                ForEach(Side.allCases) { Text($0.rawValue).tag($0) }
+            Picker("", selection: $tab) {
+                Text("Request").tag(DetailTab.request)
+                Text("Response").tag(DetailTab.response)
             }
             .pickerStyle(.segmented)
             .labelsHidden()
             .padding(8)
             Divider()
             ScrollView {
-                switch side {
+                switch tab {
                 case .request: requestRaw
                 case .response: responseRaw
                 }

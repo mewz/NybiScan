@@ -120,6 +120,23 @@ def import_ca(cert_path: Path, key_path: Path, confdir: Path) -> Path:
     return confdir / CA_KEYCERT
 
 
+def public_cert_bytes(confdir: Path, fmt: str = "pem") -> bytes:
+    """Return the PUBLIC CA certificate bytes (PEM or DER). Never the private key."""
+    confdir = Path(confdir)
+    if not ca_exists(confdir):
+        raise CaNotFoundError(f"No CA at {confdir}")
+    from mitmproxy import certs
+
+    store = certs.CertStore.from_store(confdir, _BASENAME, _KEY_SIZE)
+    if fmt == "pem":
+        return store.default_ca.to_pem()
+    if fmt == "der":
+        from cryptography.hazmat.primitives.serialization import Encoding
+
+        return store.default_ca.to_cryptography().public_bytes(Encoding.DER)
+    raise ValueError(f"unsupported export format: {fmt!r}")
+
+
 def export_cert(confdir: Path, out_path: Path, fmt: str = "pem") -> Path:
     """Export the PUBLIC CA certificate (never the private key) for install."""
     confdir = Path(confdir)

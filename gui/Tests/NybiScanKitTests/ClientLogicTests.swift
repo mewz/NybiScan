@@ -101,6 +101,34 @@ final class HistoryModelTests: XCTestCase {
     }
 }
 
+final class DetailUIStateTests: XCTestCase {
+    func testTabPersistsAcrossSelection() {
+        var state = DetailUIState()
+        XCTAssertEqual(state.tab, .request)  // default
+        state.tab = .response
+        // Selecting a new row updates the selection but NEVER the active tab.
+        state.select(7)
+        XCTAssertEqual(state.selectedId, 7)
+        XCTAssertEqual(state.tab, .response)
+        state.select(9)
+        XCTAssertEqual(state.selectedId, 9)
+        XCTAssertEqual(state.tab, .response)  // still Response while arrowing
+    }
+}
+
+final class AutoStartTests: XCTestCase {
+    private func config(_ auto: Bool) -> ConfigInfo {
+        ConfigInfo(authorizedUseAck: true, autoStartProxy: auto,
+                   defaultListenIp: "127.0.0.1", defaultListenPort: 8080)
+    }
+
+    func testShouldStart() {
+        XCTAssertTrue(AutoStart.shouldStart(config(true)))
+        XCTAssertFalse(AutoStart.shouldStart(config(false)))
+        XCTAssertFalse(AutoStart.shouldStart(nil))
+    }
+}
+
 final class CoreProcessTests: XCTestCase {
     func testDefaultBinPathHonorsEnv() {
         setenv("NYBISCAN_BIN", "/custom/nybiscan", 1)

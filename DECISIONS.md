@@ -210,6 +210,26 @@ Terse log of locked decisions. Newest context lives in CLAUDE.md.
   divider position and column widths. Within-session stability is the requirement;
   cross-launch is a later pass.
 
+## Locked (Plan 3 final cleanup: auto-start + tab memory + CA export)
+
+- `auto_start_proxy` is a global config flag, DEFAULT ON, owned by the core
+  (config.py) and exposed via GET /config + POST /config. On project open the GUI
+  reads it and, if on, calls the existing /proxy/start with the configured listen
+  ip/port. Auto-start subscribes the live history stream BEFORE starting capture so
+  early requests are not missed. It fails VISIBLY ("Auto-start proxy failed: ...")
+  on unmet preconditions, distinct from "flag off = no attempt". If auto-start had
+  to generate a new global CA (none existed), a non-blocking notice points the user
+  to export + trust it. No proxy logic in the GUI.
+- The active detail tab (Request/Response) is model-owned view state
+  (DetailUIState in Kit); selecting a row updates the selection but never the tab,
+  so it persists across selection (same user-owned pattern as the divider). The
+  select() nil-flap was removed so the detail view is not destroyed/reset.
+- CA export is surfaced in the UI (Options): POST /ca/export wraps the existing
+  core export and returns the PUBLIC cert only (PEM or DER, base64); the GUI owns
+  the save dialog, the core owns the cert material, and the private key NEVER
+  leaves the core (test-guarded). CA generate/import stay CLI-only. The UI notes
+  that Firefox uses its own trust store.
+
 ## Backlog (deferred, do not build yet)
 
 - Binary-in-history VIEW FILTER (hide binary/image/css rows like Burp's filter

@@ -28,8 +28,20 @@ def test_config_defaults(client):
     assert r.status_code == 200
     body = r.json()
     assert body["authorized_use_ack"] is False
+    assert body["auto_start_proxy"] is True  # default on
     assert body["default_listen_ip"] == "127.0.0.1"
     assert body["default_listen_port"] == 8080
+
+
+def test_update_auto_start_proxy_persists(client):
+    r = client.post("/config", json={"auto_start_proxy": False}, headers=AUTH)
+    assert r.status_code == 200
+    assert r.json()["auto_start_proxy"] is False
+
+    # Persisted to disk (fresh read, bypassing any in-memory state).
+    assert core_config.load_global_config()["auto_start_proxy"] is False
+    fresh = TestClient(create_app(AppState(TOKEN)))
+    assert fresh.get("/config", headers=AUTH).json()["auto_start_proxy"] is False
 
 
 def test_acknowledge_persists_to_disk(client):

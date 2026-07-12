@@ -20,6 +20,7 @@ DEFAULT_GLOBAL_CONFIG: Dict[str, Any] = {
     "default_listen_port": 8080,  # proxy default (Plan 2); control API self-assigns
     "last_opened_project": "",
     "authorized_use_ack": False,  # first-launch acknowledgment (UI prompt is Plan 3)
+    "auto_start_proxy": True,  # start the proxy automatically on project open
     "ui": {},
 }
 

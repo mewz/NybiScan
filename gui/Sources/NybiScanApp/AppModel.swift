@@ -18,12 +18,13 @@ final class AppModel: ObservableObject {
     @Published var config: ConfigInfo?
     @Published var project: ProjectInfo?
     @Published var model = HistoryModel()
-    @Published var selectedEntryID: Int?
+    @Published var detailUI = DetailUIState()  // selected row id + persistent active tab
     @Published var detail: HistoryDetail?
     @Published var proxyStatus: ProxyStatus?
     @Published var caInfo: CaInfo?
     @Published var wsConnected = false
     @Published var lastError: String?
+    @Published var caNotice: String?  // non-blocking notice, e.g. a new CA was generated
 
     private var core: CoreProcess?
     private var client: ControlAPIClient?
@@ -117,10 +118,57 @@ final class AppModel: ObservableObject {
     private func afterProjectOpen(_ info: ProjectInfo) async {
         project = info
         lastError = nil
+        caNotice = nil
         await reloadHistory()
+        // Subscribe to live updates BEFORE auto-starting the proxy so the very
+        // first captured requests are not missed.
+        startWSStream()
         await refreshProxyStatus()
         await refreshCaInfo()
-        startWSStream()
+        await autoStartProxyIfEnabled()
+    }
+
+    private func autoStartProxyIfEnabled() async {
+        guard AutoStart.shouldStart(config), let c = client else { return }
+        // A CA absent right now means proxyStart will generate one (untrusted
+        // until the user exports + trusts it); notice the generated-now case.
+        let caWasMissing = !(caInfo?.exists ?? false)
+        let ip = config?.defaultListenIp ?? "127.0.0.1"
+        let port = config?.defaultListenPort ?? 8080
+        do {
+            _ = try await c.proxyStart(ProxyStartPayload(ip: ip, port: port))
+        } catch {
+            lastError = "Auto-start proxy failed: \(friendly(error))"
+            await refreshProxyStatus()
+            return
+        }
+        await refreshProxyStatus()
+        await refreshCaInfo()
+        if caWasMissing {
+            caNotice = "A new CA was generated. Export and trust it (Options -> Export CA certificate) to intercept HTTPS."
+        }
+    }
+
+    func setAutoStartProxy(_ on: Bool) async {
+        guard let c = client else { return }
+        config = try? await c.updateConfig(autoStartProxy: on)
+    }
+
+    /// Fetch the public CA cert for the GUI to save via its own dialog. Returns
+    /// nil (and sets lastError) on failure; the private key never leaves the core.
+    func exportCACert(format: String) async -> (data: Data, suggestedName: String)? {
+        guard let c = client else { return nil }
+        do {
+            let export = try await c.exportCA(format: format)
+            guard let data = export.certData else {
+                lastError = "CA export returned no data"
+                return nil
+            }
+            return (data, export.suggestedFilename)
+        } catch {
+            lastError = "CA export failed: \(friendly(error))"
+            return nil
+        }
     }
 
     func reloadHistory() async {
@@ -133,8 +181,10 @@ final class AppModel: ObservableObject {
     // ----- detail -----
 
     func select(id: Int) async {
-        selectedEntryID = id
-        detail = nil
+        // Update the selected row (tab is preserved by DetailUIState). Do NOT nil
+        // detail first: the flap would destroy the detail view and reset its tab
+        // and flash the empty state while arrow-scanning.
+        detailUI.select(id)
         detail = try? await client?.historyEntry(id: id)
     }
 
@@ -204,7 +254,7 @@ final class AppModel: ObservableObject {
         case "entry_updated":
             if let detail = try? await client?.historyEntry(id: event.id) {
                 model.upsert(detail.summary)
-                if selectedEntryID == event.id { self.detail = detail }
+                if detailUI.selectedId == event.id { self.detail = detail }
             }
         default:
             break

@@ -28,16 +28,22 @@ struct MainView: View {
     private let resortTick = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
 
     var body: some View {
-        GeometryReader { geo in
-            let available = max(0, geo.size.height - dividerThickness)
-            let detailH = min(max(available * detailFraction, 0), available)
-            let tableH = available - detailH
-            VStack(spacing: 0) {
-                tablePane.frame(height: tableH).clipped()
-                splitDivider(available: available)
-                // DetailView identity is stable; only its content changes on
-                // selection. Its height comes from detailFraction, never selection.
-                DetailView().frame(height: detailH).clipped()
+        VStack(spacing: 0) {
+            if let notice = model.caNotice {
+                caNoticeBanner(notice)
+                Divider()
+            }
+            GeometryReader { geo in
+                let available = max(0, geo.size.height - dividerThickness)
+                let detailH = min(max(available * detailFraction, 0), available)
+                let tableH = available - detailH
+                VStack(spacing: 0) {
+                    tablePane.frame(height: tableH).clipped()
+                    splitDivider(available: available)
+                    // DetailView identity is stable; only its content changes on
+                    // selection. Its height comes from detailFraction, never selection.
+                    DetailView().frame(height: detailH).clipped()
+                }
             }
         }
         .navigationTitle(model.project?.name ?? "NybiScan")
@@ -92,6 +98,17 @@ struct MainView: View {
                 }
                 .onEnded { _ in dragStartFraction = nil }
         )
+    }
+
+    private func caNoticeBanner(_ notice: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.yellow)
+            Text(notice).font(.caption)
+            Spacer()
+            Button("Dismiss") { model.caNotice = nil }.buttonStyle(.borderless).font(.caption)
+        }
+        .padding(.horizontal, 10).padding(.vertical, 6)
+        .background(Color.yellow.opacity(0.15))
     }
 
     private var liveHeader: some View {

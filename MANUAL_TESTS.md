@@ -236,10 +236,12 @@ app.
   `/history/{entry_id}`.
 - Expected: the detail sits FULL WIDTH BELOW the table (bottom pane) and is blank
   when nothing is selected. It shows a Request tab and a Response tab, each with
-  raw headers plus the decoded body. A still-pending Response tab shows a waiting
-  state and then populates; a dropped binary body shows a clear "body dropped"
-  note; non-UTF-8 bodies show a hex preview rather than crashing; the UI never
-  blocks while decoding.
+  raw headers plus the decoded body. The active tab PERSISTS across selection:
+  switch to Response, then arrow up/down through rows and each row shows its
+  Response (the tab does not snap back to Request); switch to Request and it stays
+  Request. A still-pending Response tab shows a waiting state and then populates; a
+  dropped binary body shows a clear "body dropped" note; non-UTF-8 bodies show a
+  hex preview rather than crashing; the UI never blocks while decoding.
 - Verified: Plan 3
 
 ### 3.10 Vertical layout and user-owned collapsible divider
@@ -283,4 +285,32 @@ app.
   connect (no cached port); the control-API port is never hardcoded; WebSocket
   auth uses the header/subprotocol, never a query param.
 - Expected: all hold. No traffic parsing, body filtering, or store access in Swift.
+- Verified: Plan 3
+
+### 3.11 Proxy auto-start on open
+- What: the proxy starts automatically on project open (default), controlled by a
+  global flag, and fails visibly if it cannot start.
+- Command: open a project (default flag on). Then in Options toggle
+  "Auto-start proxy on project open" off (writes via `/config`) and reopen. Then
+  turn it back on but occupy the listen port first (another listener on 8080) and
+  open a project. On a first-ever launch (no global CA yet), open a project.
+- Expected: with the flag on, opening a project auto-starts the proxy (via a
+  `/config` read + `/proxy/start`) and capture streams with NO manual Start; the
+  first requests are not missed (the live subscription connects before capture
+  begins). With the flag off, the proxy does NOT auto-start (manual behavior). If
+  auto-start cannot proceed (port in use), a clear visible "Auto-start proxy
+  failed:" error appears, not a silent non-start. On a first-ever launch a
+  non-blocking notice appears: a new CA was generated, export and trust it.
+- Verified: Plan 3
+
+### 3.12 Export and trust the CA from the UI
+- What: export the public CA cert from Options so HTTPS interception works.
+- Command: Options -> CA -> "Export PEM..." or "Export DER..." (calls
+  `/ca/export`), choose a location in the save panel. Trust the exported cert
+  (macOS keychain via security add-trusted-cert, or Firefox import). Browse an
+  https site through the proxy.
+- Expected: a PEM (.crt) or DER (.der) file containing the PUBLIC certificate is
+  written (never the private key). After trusting it, https sites capture without
+  cert errors. The note reminds that Firefox uses its own trust store. Generate
+  and import remain CLI-only.
 - Verified: Plan 3

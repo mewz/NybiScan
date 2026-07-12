@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct OptionsView: View {
@@ -18,6 +19,11 @@ struct OptionsView: View {
 
             Form {
                 Section("Proxy") {
+                    // Reads the current flag and writes only on user toggle.
+                    Toggle("Auto-start proxy on project open", isOn: Binding(
+                        get: { model.config?.autoStartProxy ?? true },
+                        set: { on in Task { await model.setAutoStartProxy(on) } }
+                    ))
                     TextField("Listen IP", text: $ip)
                     TextField("Listen port", text: $port)
                     HStack {
@@ -37,7 +43,7 @@ struct OptionsView: View {
                     }
                 }
 
-                Section("CA (read-only)") {
+                Section("CA") {
                     if let ca = model.caInfo {
                         LabeledContent("Scope", value: ca.scope)
                         if ca.exists {
@@ -50,15 +56,39 @@ struct OptionsView: View {
                     } else {
                         Text("Loading...").foregroundStyle(.secondary)
                     }
-                    Button("Refresh CA info") { Task { await model.refreshCaInfo() } }
+                    HStack {
+                        Button("Export PEM...") { exportCert(format: "pem") }
+                        Button("Export DER...") { exportCert(format: "der") }
+                        Button("Refresh CA info") { Task { await model.refreshCaInfo() } }
+                    }
+                    Text("""
+                    Export and trust this CA to intercept HTTPS. Firefox uses its own \
+                    trust store (Settings -> Privacy & Security -> Certificates -> \
+                    Import), so trusting in the macOS keychain does not cover Firefox.
+                    """)
+                    .font(.caption).foregroundStyle(.secondary)
                 }
             }
             .formStyle(.grouped)
         }
-        .frame(width: 480, height: 460)
+        .frame(width: 520, height: 560)
         .onAppear {
             if ip.isEmpty { ip = model.config?.defaultListenIp ?? "127.0.0.1" }
             if port.isEmpty { port = String(model.config?.defaultListenPort ?? 8080) }
+        }
+    }
+
+    // The GUI owns the save dialog; the core owns the cert material (public cert
+    // only, never the private key).
+    private func exportCert(format: String) {
+        Task {
+            guard let (data, suggestedName) = await model.exportCACert(format: format) else { return }
+            let panel = NSSavePanel()
+            panel.nameFieldStringValue = suggestedName
+            panel.canCreateDirectories = true
+            if panel.runModal() == .OK, let url = panel.url {
+                try? data.write(to: url)
+            }
         }
     }
 }

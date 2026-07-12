@@ -67,6 +67,14 @@ public struct ControlAPIClient: Sendable {
         try await send("POST", "/config/acknowledge")
     }
 
+    public func updateConfig(autoStartProxy: Bool) async throws -> ConfigInfo {
+        try await send("POST", "/config", body: try Self.encode(UpdateConfigPayload(autoStartProxy: autoStartProxy)))
+    }
+
+    public func exportCA(format: String) async throws -> CaExport {
+        try await send("POST", "/ca/export", body: try Self.encode(CaExportPayload(format: format)))
+    }
+
     public func currentProject() async throws -> ProjectInfo {
         try await send("GET", "/projects/current")
     }

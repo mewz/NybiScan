@@ -97,8 +97,11 @@ hermetic and never touch the real user config or CA.
    API: project new/open, live history (backfill + WebSocket), pending-aware
    detail, options (proxy control + read-only status/CA info). Added additive API
    GET/POST /config and GET /ca/info. Addendum completed the history UI: a
-   core-derived `extension` field (schema v3), a sortable columnar Table, and a
-   reusable tabbed Request/Response detail (for Plan 4 Bench reuse). NEXT is Plan 4.
+   core-derived `extension` field (schema v3), a sortable columnar Table, a
+   reusable tabbed Request/Response detail (for Plan 4 Bench reuse), a user-owned
+   vertical split, proxy auto-start (default on), persistent detail tab, and CA
+   export from the UI. Plan 3 COMPLETE. NEXT is Plan 3.5 (Makefile + build docs),
+   then Plan 4 (Bench).
 4. Bench (replay) + match/replace + decompress.
 5. Dashboard site map + scoped spider.
 6. MCP server over the core.
