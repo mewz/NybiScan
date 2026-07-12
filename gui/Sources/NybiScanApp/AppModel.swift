@@ -49,6 +49,7 @@ final class AppModel: ObservableObject {
     @Published var benchHistory: [BenchSendSummary] = []
     @Published var benchSending = false
     @Published var benchNote: String?  // e.g. dropped-body on seed
+    @Published var viewedSendId: Int?  // which prior send the panes currently show (nil = newest)
 
     private var core: CoreProcess?
     private var client: ControlAPIClient?
@@ -211,9 +212,20 @@ final class AppModel: ObservableObject {
         guard let c = client, let id = selectedBenchTabId else { return }
         await saveDraft()
         benchSending = true
+        // The send runs off the UI thread (URLSession); the UI stays responsive and
+        // shows Cancel. A hang (e.g. wrong Content-Length) is bounded by the core
+        // timeout or aborted by Cancel; either way a result is recorded and returned.
         benchResponse = try? await c.benchSend(id)
         benchSending = false
         await loadBenchHistory()
+        viewedSendId = benchResponse?.id  // the newest send is now shown
+    }
+
+    /// Abort the in-flight send. The outstanding /send returns a recorded "cancelled"
+    /// result, which flips benchSending back to idle in sendBench().
+    func cancelBench() async {
+        guard let c = client, let id = selectedBenchTabId else { return }
+        try? await c.benchCancel(id)
     }
 
     func loadBenchHistory() async {
@@ -226,13 +238,26 @@ final class AppModel: ObservableObject {
 
     func showBenchSend(_ sendId: Int) async {
         // Load a prior send: show its request snapshot in the editor + its response.
+        // Viewing an old entry populates the editor for tweak-and-resend but never
+        // mutates the stored snapshot; a later Send appends a NEW entry (linear).
         guard let detail = try? await client?.benchSendDetail(sendId) else { return }
         benchResponse = detail
+        viewedSendId = sendId
         benchDraft = BenchDraft(
             rawRequest: detail.reqRaw, connHost: detail.connHost,
             connPort: String(detail.connPort), connTls: detail.connTls,
             contentLengthAutofill: detail.contentLengthAutofill
         )
+    }
+
+    /// Step one send older/newer through this tab's history (Burp `<`/`>`). No-op at
+    /// an end. `benchHistory` is oldest -> newest as the API returns it.
+    func stepBenchHistory(older: Bool) async {
+        let ids = benchHistory.map { $0.id }
+        let target = older
+            ? BenchHistoryNav.older(ids, current: viewedSendId)
+            : BenchHistoryNav.newer(ids, current: viewedSendId)
+        if let target { await showBenchSend(target) }
     }
 
     func renameBenchTab(_ id: Int, name: String) async {

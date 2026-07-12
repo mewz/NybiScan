@@ -311,3 +311,40 @@ Terse log of locked decisions. Newest context lives in CLAUDE.md.
   request) + the read-only RawTextView (response), a connection bar, and a
   History/Bench section toggle. Thin client: no HTTP-sending or business logic in
   Swift.
+
+## Locked (Plan 4 finisher: send lifecycle + history navigation)
+
+- Reconciliation finding: every Bench send was ALREADY recorded append-only (the
+  /send route inserts on success AND error), and the send already had a bounded 30s
+  timeout. The gaps this finisher closes are purely: (a) no Cancel and the send held
+  the Send button, and (b) history navigation was a single dropdown, not Burp-style
+  arrows + direct-pick. No recording behavior changed.
+- Send is async-under-the-hood and cancellable. The /send handler stays synchronous
+  in presentation (send -> wait -> response) but runs the socket on a request-thread
+  the GUI awaits off the UI thread, so the UI never freezes. The Send button becomes
+  Cancel (with a spinner) while a send is outstanding.
+- Cancel is SERVER-SIDE and prompt: /send registers an engine.CancelToken in a
+  per-tab in-flight registry on AppState; POST /bench/tabs/{id}/cancel looks it up
+  and aborts the socket. Aborting uses socket.shutdown(SHUT_RDWR) then close, because
+  close() alone does not wake a recv already blocked in another thread. A cancel that
+  arrives before the socket exists is remembered and applied on bind.
+- Bounded timeout recorded as a result: a hang (wrong Content-Length the server waits
+  to fill, or a nonresponsive server) hits the send timeout and is recorded as
+  error='timeout'; a cancel is recorded as error='cancelled'. Both are real history
+  entries, not a silent spin. Wrong Content-Length is a SUPPORTED verbatim test case:
+  the tool makes the resulting hang recoverable (Cancel) and bounded (timeout), it
+  does NOT correct the Content-Length.
+- Per-tab history is append-only and linear: EVERY send (success, error, timeout,
+  cancelled) appends a new bench_history row; sending never overwrites or branches a
+  prior entry. Viewing an old entry populates the editor for tweak-and-resend but
+  leaves the stored snapshot untouched; a later Send appends a NEW newest entry.
+- History navigation is Burp Repeater style: `<` / `>` arrows step one send at a
+  time and a dropdown on the `<` control jumps directly to any send (newest ->
+  oldest). Selecting a send restores BOTH panes (request editor + response). The
+  control API returns history oldest -> newest (ascending id); newest-first is a
+  display concern. Newest is the default view. Pure step/pick logic lives in Kit
+  (BenchHistoryNav) so it is unit-tested independently of the view.
+- "Send to Bench" parity: the same seed action (create a tab from a history id) is
+  available from the history-row context menu AND the detail pane's text context
+  menu, added alongside the NSTextView's own Cut/Copy/Paste (via the text view's
+  menu delegate, so those are preserved).

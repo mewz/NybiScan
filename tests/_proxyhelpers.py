@@ -183,6 +183,44 @@ class RawCaptureOrigin:
         return self.captured
 
 
+class StallOrigin:
+    """A one-shot socket server that accepts a connection and then NEVER responds,
+    holding it open. Used to test the send timeout (a hang - wrong Content-Length or
+    a nonresponsive server - must be bounded, not an unbounded block) and cancel (an
+    in-flight send aborted from another thread)."""
+
+    def __init__(self):
+        self.accepted = threading.Event()
+        self._sock = socket.socket()
+        self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._sock.bind(("127.0.0.1", 0))
+        self._sock.listen(1)
+        self.port = self._sock.getsockname()[1]
+        self._stop = threading.Event()
+        self._conn = None
+        self._thread = threading.Thread(target=self._serve, daemon=True)
+        self._thread.start()
+
+    def _serve(self):
+        try:
+            conn, _ = self._sock.accept()
+            self._conn = conn
+            self.accepted.set()
+            # Hold the connection open, sending nothing, until told to stop.
+            self._stop.wait(10)
+        except Exception:
+            pass
+
+    def stop(self):
+        self._stop.set()
+        for s in (self._conn, self._sock):
+            try:
+                if s is not None:
+                    s.close()
+            except Exception:
+                pass
+
+
 def proxy_opener(proxy_port: int, ca_cert: Path | None = None):
     handlers = [urllib.request.ProxyHandler({
         "http": f"http://127.0.0.1:{proxy_port}",

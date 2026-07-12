@@ -125,6 +125,12 @@ public struct ControlAPIClient: Sendable {
         try await send("POST", "/bench/tabs/\(id)/send")
     }
 
+    /// Aborts the tab's in-flight send (if any); the blocking send then returns a
+    /// recorded "cancelled" outcome.
+    public func benchCancel(_ id: Int) async throws {
+        try await sendNoContent("POST", "/bench/tabs/\(id)/cancel")
+    }
+
     public func benchTabHistory(_ id: Int) async throws -> [BenchSendSummary] {
         try await send("GET", "/bench/tabs/\(id)/history")
     }

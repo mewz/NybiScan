@@ -396,10 +396,34 @@ app.
 - Command: in History, right-click a captured row -> "Send to Bench" (calls
   `/bench/tabs` seeded, opening a prefilled tab; a dropped binary body is noted).
   Rename a tab (right-click) and create several tabs. Send a tab a few times and
-  step back/forth through its history via the response-pane picker (uses
+  step back/forth through its history via the response-pane `<` / `>` arrows AND the
+  dropdown on the `<` control to jump directly to any send (uses
   `/bench/tabs/{id}/history` and `/bench/history/{entry_id}`). Quit and reopen the
   project.
 - Expected: the seeded tab is prefilled with the captured request (editable);
-  tabs rename/close; the history picker restores each prior send's request +
-  response; after reopening the project, Bench tabs and their history PERSIST.
+  tabs rename/close; the arrows step one send at a time and the dropdown jumps to any
+  send, each restoring BOTH the request editor and the response pane; after reopening
+  the project, Bench tabs and their history PERSIST.
+- Verified: Plan 4
+
+### 4.6 Send/Cancel lifecycle: non-blocking, cancellable, bounded
+- What: a send stays responsive; a hang is recoverable (Cancel) and bounded (timeout).
+- Command: send a normal request and watch the Send button become Cancel with a
+  spinner while in flight. Then turn "Auto C-L" OFF, set a Content-Length LARGER than
+  the body (e.g. `Content-Length: 5000` on a tiny/empty body) so the server waits for
+  bytes that never come, and Send. While it hangs, click Cancel (calls
+  `/bench/tabs/{id}/cancel`). Separately, let one such send run without cancelling.
+- Expected: the UI never freezes; clicking Cancel aborts the send promptly and the
+  button returns to Send. A send left alone times out on its own. Either way the
+  outcome is recorded as a new history entry (`cancelled` or `timeout`) that you can
+  step to. The wrong Content-Length is NOT corrected; it goes out as typed.
+- Verified: Plan 4
+
+### 4.7 Send to Bench from the detail pane
+- What: seed a Bench tab while reading a request in the detail view.
+- Command: in History, select a row, then right-click inside the request/response
+  detail text and choose "Send to Bench" (same seed as the row action).
+- Expected: a prefilled Bench tab opens (connection bar + reconstructed raw request,
+  h2 -> h1.1 rules, dropped-body noted); the detail pane's normal Copy/Paste are
+  still present alongside "Send to Bench".
 - Verified: Plan 4

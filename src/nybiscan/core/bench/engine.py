@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import socket
 import ssl
+import threading
 import time
 from http.client import HTTPResponse
 from typing import Optional
@@ -22,6 +23,49 @@ from typing import Optional
 from ..decode import decompress
 
 _SEP = b"\r\n\r\n"
+
+
+def _abort(sock) -> None:
+    """Interrupt a blocked send/recv on the socket from another thread. close() alone
+    does NOT wake a recv already in progress on most platforms; shutdown() does."""
+    try:
+        sock.shutdown(socket.SHUT_RDWR)
+    except Exception:
+        pass
+    try:
+        sock.close()
+    except Exception:
+        pass
+
+
+class CancelToken:
+    """Lets another thread abort an in-flight send by closing its socket.
+
+    send_raw binds the live socket once it exists; cancel() (called from any thread,
+    e.g. the /cancel route handler) sets a flag and closes that socket, which makes
+    the blocked send/recv raise. send_raw then reports a 'cancelled' outcome rather
+    than a generic error. A cancel that arrives before the socket is bound is
+    remembered, so bind() closes the socket immediately.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._sock = None
+        self.cancelled = False
+
+    def bind(self, sock) -> None:
+        with self._lock:
+            if self.cancelled:
+                _abort(sock)
+            else:
+                self._sock = sock
+
+    def cancel(self) -> None:
+        with self._lock:
+            self.cancelled = True
+            sock = self._sock
+        if sock is not None:
+            _abort(sock)
 
 
 def apply_content_length(raw: bytes, autofill: bool) -> bytes:
@@ -76,10 +120,15 @@ def send_raw(
     raw_request: bytes,
     content_length_autofill: bool = True,
     timeout: float = 30.0,
+    cancel_token: Optional[CancelToken] = None,
 ) -> dict:
     """Send raw bytes to host:port and read the HTTP/1.1 response. Returns a dict of
     response-snapshot fields; on a genuine connection/handshake failure returns the
-    same shape with status=None and error set."""
+    same shape with status=None and error set.
+
+    The send is bounded by `timeout` (a hang - e.g. a wrong Content-Length the server
+    waits to fill - lands as error='timeout', never an unbounded block). A cancel_token
+    lets another thread abort the in-flight socket promptly (error='cancelled')."""
     payload = apply_content_length(raw_request, content_length_autofill)
     method = _method_of(payload)
     start = time.time()
@@ -95,6 +144,8 @@ def send_raw(
             except NotImplementedError:
                 pass
             sock = ctx.wrap_socket(sock, server_hostname=host)
+        if cancel_token is not None:
+            cancel_token.bind(sock)  # closes now if cancel already arrived
         sock.settimeout(timeout)
         sock.sendall(payload)
 
@@ -125,6 +176,12 @@ def send_raw(
             "duration_ms": int((time.time() - start) * 1000),
         }
     except Exception as exc:  # noqa: BLE001 - a real connection/handshake failure
+        if cancel_token is not None and cancel_token.cancelled:
+            error = "cancelled"
+        elif isinstance(exc, (socket.timeout, TimeoutError)):
+            error = "timeout"
+        else:
+            error = f"{type(exc).__name__}: {exc}"
         return {
             "status": None,
             "resp_headers_raw": "",
@@ -132,7 +189,7 @@ def send_raw(
             "resp_length": 0,
             "mime_type": None,
             "resp_content_encoding": None,
-            "error": f"{type(exc).__name__}: {exc}",
+            "error": error,
             "duration_ms": int((time.time() - start) * 1000),
         }
     finally:

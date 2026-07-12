@@ -185,6 +185,35 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(send.respBodyB64, "b2s=")  // -> "ok"
     }
 
+    func testBenchCancelHitsCancelPost() async throws {
+        StubURLProtocol.responder = { _ in (200, Data(#"{"cancelled":true}"#.utf8)) }
+        try await makeClient().benchCancel(3)
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/bench/tabs/3/cancel")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.httpMethod, "POST")
+    }
+
+    // ----- bench history navigation model -----
+
+    func testBenchHistoryNavStepsAndPicks() {
+        let ids = [1, 2, 3]  // oldest -> newest, as the API returns
+        XCTAssertEqual(BenchHistoryNav.newest(ids), 3)
+        // From newest (nil), step older walks back one at a time; newer at newest is nil.
+        XCTAssertEqual(BenchHistoryNav.older(ids, current: nil), 2)
+        XCTAssertNil(BenchHistoryNav.newer(ids, current: nil))
+        XCTAssertEqual(BenchHistoryNav.older(ids, current: 2), 1)
+        XCTAssertNil(BenchHistoryNav.older(ids, current: 1))  // at the oldest end
+        XCTAssertEqual(BenchHistoryNav.newer(ids, current: 1), 2)
+        XCTAssertEqual(BenchHistoryNav.newer(ids, current: 2), 3)
+    }
+
+    func testBenchHistoryNavEmptyAndSingle() {
+        XCTAssertNil(BenchHistoryNav.newest([]))
+        XCTAssertNil(BenchHistoryNav.older([], current: nil))
+        XCTAssertNil(BenchHistoryNav.older([9], current: nil))
+        XCTAssertNil(BenchHistoryNav.newer([9], current: nil))
+        XCTAssertEqual(BenchHistoryNav.newest([9]), 9)
+    }
+
     func testNon2xxThrowsControlAPIError() async {
         StubURLProtocol.responder = { _ in (401, Data(#"{"detail":"invalid token"}"#.utf8)) }
         do {

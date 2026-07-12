@@ -110,7 +110,10 @@ hermetic and never touch the real user config or CA.
    multiple renamable tabs + per-tab send history persisted in the bundle (schema
    v4), send-to-Bench seeding from capture, Content-Length auto-fill toggle. Core
    owns the send engine + storage; GUI reuses the editable request/response surface.
-   New /bench/* API. NEXT is Plan 5.
+   New /bench/* API. Finisher complete: server-side cancellable send (Send <->
+   Cancel, bounded timeout recorded as error='timeout'/'cancelled'), append-only
+   per-tab history with Burp-style `<`/`>` + direct-pick navigation restoring both
+   panes, and detail-pane "Send to Bench" parity. NEXT is Plan 5.
 5. Dashboard site map + scoped spider.
 6. MCP server over the core.
 7. Claude skill for MCP-driven source review + testing.

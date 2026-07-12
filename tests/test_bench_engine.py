@@ -4,10 +4,12 @@ TLS no-verify, genuine failure."""
 from __future__ import annotations
 
 import socket
+import threading
+import time
 
 from nybiscan.core.bench import engine
 
-from ._proxyhelpers import RawCaptureOrigin
+from ._proxyhelpers import RawCaptureOrigin, StallOrigin
 
 
 def _free_port() -> int:
@@ -71,3 +73,47 @@ def test_genuine_connection_failure_records_error():
                            content_length_autofill=False, timeout=2.0)
     assert resp["status"] is None
     assert resp["error"]  # a real connection failure is reported, not swallowed
+
+
+def test_hanging_send_is_bounded_and_records_timeout():
+    # A server that accepts but never responds (stand-in for a wrong Content-Length
+    # the server waits to fill) must hit the timeout, not block unboundedly.
+    origin = StallOrigin()
+    try:
+        start = time.time()
+        resp = engine.send_raw("127.0.0.1", origin.port, False,
+                               b"GET / HTTP/1.1\r\nHost: x\r\n\r\n",
+                               content_length_autofill=False, timeout=0.5)
+        elapsed = time.time() - start
+        assert resp["status"] is None
+        assert resp["error"] == "timeout"
+        assert elapsed < 3.0  # bounded by the timeout, not an unbounded hang
+    finally:
+        origin.stop()
+
+
+def test_inflight_send_can_be_cancelled():
+    # A send against a nonresponsive server is aborted from another thread; it
+    # records a 'cancelled' outcome (distinct from a timeout).
+    origin = StallOrigin()
+    token = engine.CancelToken()
+    result = {}
+
+    def run():
+        result["resp"] = engine.send_raw(
+            "127.0.0.1", origin.port, False, b"GET / HTTP/1.1\r\nHost: x\r\n\r\n",
+            content_length_autofill=False, timeout=10.0, cancel_token=token,
+        )
+
+    t = threading.Thread(target=run)
+    t.start()
+    assert origin.accepted.wait(3.0)  # the send has connected and is waiting
+    time.sleep(0.1)
+    token.cancel()
+    t.join(3.0)
+    try:
+        assert not t.is_alive()  # cancel aborted promptly, well before the 10s timeout
+        assert result["resp"]["status"] is None
+        assert result["resp"]["error"] == "cancelled"
+    finally:
+        origin.stop()

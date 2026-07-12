@@ -132,9 +132,17 @@ def send_tab(tab_id: int, state: AppState = Depends(require_token)):
     # The raw request text is the wire payload (verbatim); the connection target is
     # the tab's host/port/tls, NEVER derived from the Host header.
     raw_bytes = tab.raw_request.encode("utf-8", errors="surrogateescape")
-    resp = engine.send_raw(
-        tab.conn_host, tab.conn_port, tab.conn_tls, raw_bytes, tab.content_length_autofill
-    )
+    # A cancel token so a concurrent POST .../cancel can abort this (blocking) send;
+    # every outcome (response, error, timeout, cancelled) still appends to history.
+    token = engine.CancelToken()
+    state.register_bench_send(tab_id, token)
+    try:
+        resp = engine.send_raw(
+            tab.conn_host, tab.conn_port, tab.conn_tls, raw_bytes,
+            tab.content_length_autofill, cancel_token=token,
+        )
+    finally:
+        state.clear_bench_send(tab_id, token)
     send_id = proj.writer.submit(
         lambda c: brepo.insert_send(
             c, tab_id, tab.raw_request, tab.conn_host, tab.conn_port, tab.conn_tls,
@@ -142,6 +150,15 @@ def send_tab(tab_id: int, state: AppState = Depends(require_token)):
         )
     )
     return _send_full(brepo.get_send(proj.read_conn, send_id))
+
+
+@router.post("/tabs/{tab_id}/cancel")
+def cancel_send(tab_id: int, state: AppState = Depends(require_token)):
+    """Abort the tab's in-flight send (if any) by closing its socket. The blocking
+    /send handler then records a 'cancelled' outcome and returns. A no-op (with
+    cancelled=False) when nothing is in flight."""
+    _require_project(state)
+    return {"cancelled": state.cancel_bench_send(tab_id)}
 
 
 @router.get("/tabs/{tab_id}/history")

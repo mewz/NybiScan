@@ -7,7 +7,6 @@ struct BenchView: View {
     @EnvironmentObject var model: AppModel
     @State private var renameTab: BenchTab?
     @State private var renameText = ""
-    @State private var historySelection: Int?
 
     var body: some View {
         VSplitView {
@@ -85,10 +84,17 @@ struct BenchView: View {
             TextField("port", text: $model.benchDraft.connPort).frame(width: 64)
             Toggle("Auto C-L", isOn: $model.benchDraft.contentLengthAutofill).toggleStyle(.checkbox)
             Spacer()
-            if model.benchSending { ProgressView().controlSize(.small) }
-            Button("Send") { Task { await model.sendBench() } }
-                .keyboardShortcut(.return, modifiers: .command)
-                .disabled(model.benchSending || model.selectedBenchTabId == nil)
+            // While a send is outstanding the button becomes Cancel (with a spinner)
+            // so a slow/hanging send stays responsive and recoverable.
+            if model.benchSending {
+                Button(role: .destructive) { Task { await model.cancelBench() } } label: {
+                    HStack(spacing: 5) { ProgressView().controlSize(.small); Text("Cancel") }
+                }
+            } else {
+                Button("Send") { Task { await model.sendBench() } }
+                    .keyboardShortcut(.return, modifiers: .command)
+                    .disabled(model.selectedBenchTabId == nil)
+            }
         }
         .padding(.horizontal, 8).padding(.vertical, 6)
     }
@@ -117,21 +123,53 @@ struct BenchView: View {
                 Text("Response").font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            if !model.benchHistory.isEmpty {
-                Picker("History", selection: $historySelection) {
-                    Text("Latest").tag(Int?.none)
-                    ForEach(model.benchHistory) { h in
-                        Text("#\(h.id) \(h.status.map(String.init) ?? (h.error != nil ? "err" : "-"))")
-                            .tag(Int?.some(h.id))
-                    }
-                }
-                .labelsHidden().frame(width: 150)
-                .onChange(of: historySelection) { _, sel in
-                    if let id = sel { Task { await model.showBenchSend(id) } }
-                }
-            }
+            historyNav
         }
         .padding(.horizontal, 8).padding(.vertical, 6)
+    }
+
+    // Burp Repeater-style history navigation: `<`/`>` step one send at a time, and
+    // the dropdown on the `<` control jumps directly to any prior send (newest ->
+    // oldest). Selecting a send restores BOTH panes (request editor + response).
+    @ViewBuilder private var historyNav: some View {
+        if !model.benchHistory.isEmpty {
+            let ids = model.benchHistory.map { $0.id }
+            let hasOlder = BenchHistoryNav.older(ids, current: model.viewedSendId) != nil
+            let hasNewer = BenchHistoryNav.newer(ids, current: model.viewedSendId) != nil
+            HStack(spacing: 4) {
+                Menu {
+                    ForEach(model.benchHistory.reversed()) { h in
+                        Button(Self.entryLabel(h)) { Task { await model.showBenchSend(h.id) } }
+                    }
+                } label: {
+                    Image(systemName: "chevron.left")
+                } primaryAction: {
+                    Task { await model.stepBenchHistory(older: true) }
+                }
+                .menuStyle(.borderlessButton).fixedSize()
+                .disabled(!hasOlder && model.benchHistory.count <= 1)
+
+                Text(Self.positionLabel(ids, current: model.viewedSendId))
+                    .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+
+                Button { Task { await model.stepBenchHistory(older: false) } } label: {
+                    Image(systemName: "chevron.right")
+                }
+                .buttonStyle(.borderless).disabled(!hasNewer)
+            }
+        }
+    }
+
+    private static func entryLabel(_ h: BenchSendSummary) -> String {
+        let outcome = h.status.map(String.init) ?? (h.error ?? "-")
+        return "#\(h.id)  \(outcome)"
+    }
+
+    private static func positionLabel(_ ids: [Int], current: Int?) -> String {
+        let cur = current ?? ids.last
+        guard let cur, let idx = ids.firstIndex(of: cur) else { return "" }
+        // Number from newest = 1 (Burp shows the send position, newest first).
+        return "\(ids.count - idx)/\(ids.count)"
     }
 }
 

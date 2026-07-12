@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import base64
+import threading
+import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -11,7 +13,7 @@ from nybiscan.api.app import create_app
 from nybiscan.api.state import AppState
 from nybiscan.core.schemas import HistoryRecord
 
-from ._proxyhelpers import RawCaptureOrigin
+from ._proxyhelpers import Origin, RawCaptureOrigin, StallOrigin
 
 TOKEN = "bench-token"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
@@ -129,3 +131,66 @@ def test_delete_tab(client):
     tab = client.post("/bench/tabs", json={}, headers=AUTH).json()
     assert client.delete(f"/bench/tabs/{tab['id']}", headers=AUTH).json() == {"deleted": True}
     assert client.get("/bench/tabs", headers=AUTH).json() == []
+
+
+def test_history_appends_in_order_and_persists_across_reopen(client, tmp_path):
+    origin = Origin()  # multi-shot: serves each of several sends
+    tab = client.post("/bench/tabs", json={}, headers=AUTH).json()
+    client.patch(
+        f"/bench/tabs/{tab['id']}",
+        json={"conn_host": "127.0.0.1", "conn_port": origin.port, "conn_tls": False,
+              "raw_request": "GET /json HTTP/1.1\r\nHost: h\r\n\r\n"},
+        headers=AUTH,
+    )
+    for _ in range(3):
+        assert client.post(f"/bench/tabs/{tab['id']}/send", headers=AUTH).json()["status"] == 200
+    origin.stop()
+
+    hist = client.get(f"/bench/tabs/{tab['id']}/history", headers=AUTH).json()
+    assert len(hist) == 3  # append-only: every send kept, none overwritten
+    ids = [h["id"] for h in hist]
+    assert ids == sorted(ids) and len(set(ids)) == 3  # ascending append order, distinct
+    for h in hist:
+        full = client.get(f"/bench/history/{h['id']}", headers=AUTH).json()
+        assert full["req_raw"].startswith("GET /json")  # request-as-sent round-trips
+        assert full["status"] == 200
+
+    # Close and reopen the SAME bundle: the tab's full send history survives.
+    assert client.post("/projects/close", headers=AUTH).status_code == 200
+    r = client.post("/projects/open", json={"path": str(tmp_path / "b.nybiscan")}, headers=AUTH)
+    assert r.status_code == 200
+    hist2 = client.get(f"/bench/tabs/{tab['id']}/history", headers=AUTH).json()
+    assert [h["id"] for h in hist2] == ids
+
+
+def test_cancel_no_inflight_is_noop(client):
+    tab = client.post("/bench/tabs", json={}, headers=AUTH).json()
+    r = client.post(f"/bench/tabs/{tab['id']}/cancel", headers=AUTH)
+    assert r.status_code == 200 and r.json() == {"cancelled": False}
+
+
+def test_inflight_send_cancelled_records_outcome(client):
+    # A send against a nonresponsive server, aborted by a concurrent /cancel, records
+    # a 'cancelled' outcome in history (the core registry wiring end to end).
+    origin = StallOrigin()
+    tab = client.post("/bench/tabs", json={}, headers=AUTH).json()
+    client.patch(
+        f"/bench/tabs/{tab['id']}",
+        json={"conn_host": "127.0.0.1", "conn_port": origin.port, "conn_tls": False,
+              "raw_request": "GET / HTTP/1.1\r\nHost: h\r\n\r\n"},
+        headers=AUTH,
+    )
+    result = {}
+
+    def do_send():
+        result["resp"] = client.post(f"/bench/tabs/{tab['id']}/send", headers=AUTH).json()
+
+    t = threading.Thread(target=do_send)
+    t.start()
+    assert origin.accepted.wait(3.0)  # the send has connected and is waiting
+    time.sleep(0.1)
+    assert client.post(f"/bench/tabs/{tab['id']}/cancel", headers=AUTH).json() == {"cancelled": True}
+    t.join(3.0)
+    origin.stop()
+    assert not t.is_alive()
+    assert result["resp"]["status"] is None and result["resp"]["error"] == "cancelled"
