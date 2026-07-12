@@ -416,6 +416,11 @@ app.
   `#12, #13 ...`; the dropdown shows at most the 25 most recent; the `x/N` indicator
   reflects ALL sends (N > 25); the `<` arrow still reaches send 1 even though it is
   outside the dropdown window. Nothing is trimmed from storage.
+- Also: send more, reopen the dropdown, and confirm the newest sends now appear (the
+  list refreshes live, it does not freeze at an earlier count); pick one entry then a
+  different entry and confirm the request/response switches each time (selection does
+  not stick on the first pick); switch tabs and back and confirm each tab shows its
+  own current list.
 - Verified: Plan 4
 
 ### 4.8 Closing a tab discards its history (no orphans)

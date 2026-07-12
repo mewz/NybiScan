@@ -228,6 +228,20 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(BenchHistoryNav.older(Array(0..<30), current: 5), 4)  // step past the window
     }
 
+    func testDropdownWindowReflectsCurrentCount() {
+        // Regression: the dropdown must reflect the tab's CURRENT send count, not a
+        // stale earlier one (bug: counter showed 10/10 while the list stuck at 7).
+        // The window is a pure function of the count passed in, so as long as the
+        // view passes the live count it lists all current sends.
+        let atSeven = BenchHistoryNav.windowIndices(count: 7)
+        XCTAssertEqual(atSeven.count, 7)
+        XCTAssertEqual(atSeven.first, 6)  // newest of 7 (ordinal 7)
+        let atTen = BenchHistoryNav.windowIndices(count: 10)
+        XCTAssertEqual(atTen.count, 10)
+        XCTAssertEqual(atTen.first, 9)  // newest of 10 (ordinal 10), not frozen at 7
+        XCTAssertEqual(BenchHistoryNav.ordinal(index: atTen.first!), 10)
+    }
+
     func testDropdownWindowShowsAllWhenFewerThan25() {
         // Two independent tabs each number their own sends from 1 (per-tab, not global).
         let idx = BenchHistoryNav.windowIndices(count: 3)

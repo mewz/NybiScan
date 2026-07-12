@@ -154,6 +154,11 @@ struct BenchView: View {
                 }
                 .menuStyle(.borderlessButton).fixedSize()
                 .disabled(!hasOlder && model.benchHistory.count <= 1)
+                // SwiftUI/AppKit caches a Menu's built content (and its item action
+                // closures); without a changing identity the dropdown keeps a stale
+                // list after new sends and selection sticks on the first pick. Re-key
+                // on the history content + current selection so it rebuilds live.
+                .id("bench-menu-\(model.benchHistory.count)-\(model.benchHistory.last?.id ?? -1)-\(model.viewedSendId ?? -1)")
 
                 Text(Self.positionLabel(ids, current: model.viewedSendId))
                     .font(.caption).foregroundStyle(.secondary).monospacedDigit()
