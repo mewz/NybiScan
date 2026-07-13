@@ -39,10 +39,12 @@ struct SectionContainer: View {
         }
         .toolbar {
             ToolbarItem(placement: .principal) {
+                // Segment order is Dashboard, History, Bench (left to right). This is
+                // independent of the launch default (History; see AppModel.section).
                 Picker("", selection: $model.section) {
+                    Text("Dashboard").tag(AppSection.dashboard)
                     Text("History").tag(AppSection.history)
                     Text("Bench").tag(AppSection.bench)
-                    Text("Dashboard").tag(AppSection.dashboard)
                 }
                 .pickerStyle(.segmented).frame(width: 280)
             }
