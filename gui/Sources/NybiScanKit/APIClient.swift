@@ -104,4 +104,38 @@ public struct ControlAPIClient: Sendable {
     public func proxyStop() async throws { try await sendNoContent("POST", "/proxy/stop") }
 
     public func caInfo() async throws -> CaInfo { try await send("GET", "/ca/info") }
+
+    // ----- bench ------------------------------------------------------------
+
+    public func benchTabs() async throws -> [BenchTab] { try await send("GET", "/bench/tabs") }
+
+    public func createBenchTab(_ payload: CreateBenchTabPayload) async throws -> BenchTab {
+        try await send("POST", "/bench/tabs", body: try Self.encode(payload))
+    }
+
+    public func updateBenchTab(_ id: Int, _ payload: UpdateBenchTabPayload) async throws -> BenchTab {
+        try await send("PATCH", "/bench/tabs/\(id)", body: try Self.encode(payload))
+    }
+
+    public func deleteBenchTab(_ id: Int) async throws {
+        try await sendNoContent("DELETE", "/bench/tabs/\(id)")
+    }
+
+    public func benchSend(_ id: Int) async throws -> BenchSendDetail {
+        try await send("POST", "/bench/tabs/\(id)/send")
+    }
+
+    /// Aborts the tab's in-flight send (if any); the blocking send then returns a
+    /// recorded "cancelled" outcome.
+    public func benchCancel(_ id: Int) async throws {
+        try await sendNoContent("POST", "/bench/tabs/\(id)/cancel")
+    }
+
+    public func benchTabHistory(_ id: Int) async throws -> [BenchSendSummary] {
+        try await send("GET", "/bench/tabs/\(id)/history")
+    }
+
+    public func benchSendDetail(_ id: Int) async throws -> BenchSendDetail {
+        try await send("GET", "/bench/history/\(id)")
+    }
 }

@@ -138,6 +138,139 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(export.certData, Data("abc".utf8))  // YWJj -> abc
     }
 
+    func testBenchTabDecodesAndSeedNote() async throws {
+        StubURLProtocol.responder = { _ in
+            (200, Data("""
+            {"id":3,"name":"Login","order_index":1,"raw_request":"GET / HTTP/1.1\\r\\nHost: h\\r\\n\\r\\n",
+             "conn_host":"h","conn_port":8443,"conn_tls":false,"content_length_autofill":true,
+             "dropped_note":"body dropped"}
+            """.utf8))
+        }
+        let tab = try await makeClient().createBenchTab(CreateBenchTabPayload(seedHistoryId: 9))
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/bench/tabs")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.httpMethod, "POST")
+        XCTAssertEqual(tab.id, 3)
+        XCTAssertEqual(tab.orderIndex, 1)
+        XCTAssertEqual(tab.connPort, 8443)
+        XCTAssertFalse(tab.connTls)
+        XCTAssertTrue(tab.contentLengthAutofill)
+        XCTAssertEqual(tab.droppedNote, "body dropped")
+    }
+
+    func testBenchUpdateHitsPatch() async throws {
+        StubURLProtocol.responder = { _ in
+            (200, Data(#"{"id":1,"name":"n","order_index":0,"raw_request":"r","conn_host":"h","conn_port":443,"conn_tls":true,"content_length_autofill":false,"dropped_note":null}"#.utf8))
+        }
+        let tab = try await makeClient().updateBenchTab(1, UpdateBenchTabPayload(rawRequest: "r", connTls: true))
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/bench/tabs/1")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.httpMethod, "PATCH")
+        XCTAssertNil(tab.droppedNote)
+        XCTAssertFalse(tab.contentLengthAutofill)
+    }
+
+    func testBenchSendDecodesResponse() async throws {
+        StubURLProtocol.responder = { _ in
+            (200, Data("""
+            {"id":5,"tab_id":1,"status":200,"resp_length":2,"mime_type":"text/plain","error":null,
+             "sent_ts":10,"duration_ms":7,"req_raw":"GET /x HTTP/1.1","conn_host":"h","conn_port":443,
+             "conn_tls":true,"content_length_autofill":true,"resp_headers_raw":"HTTP/1.1 200 OK",
+             "resp_body_b64":"b2s=","resp_content_encoding":null}
+            """.utf8))
+        }
+        let send = try await makeClient().benchSend(1)
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/bench/tabs/1/send")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.httpMethod, "POST")
+        XCTAssertEqual(send.status, 200)
+        XCTAssertEqual(send.reqRaw, "GET /x HTTP/1.1")
+        XCTAssertEqual(send.respBodyB64, "b2s=")  // -> "ok"
+    }
+
+    func testBenchCancelHitsCancelPost() async throws {
+        StubURLProtocol.responder = { _ in (200, Data(#"{"cancelled":true}"#.utf8)) }
+        try await makeClient().benchCancel(3)
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/bench/tabs/3/cancel")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.httpMethod, "POST")
+    }
+
+    // ----- bench history navigation model -----
+
+    func testBenchHistoryNavStepsAndPicks() {
+        let ids = [1, 2, 3]  // oldest -> newest, as the API returns
+        XCTAssertEqual(BenchHistoryNav.newest(ids), 3)
+        // From newest (nil), step older walks back one at a time; newer at newest is nil.
+        XCTAssertEqual(BenchHistoryNav.older(ids, current: nil), 2)
+        XCTAssertNil(BenchHistoryNav.newer(ids, current: nil))
+        XCTAssertEqual(BenchHistoryNav.older(ids, current: 2), 1)
+        XCTAssertNil(BenchHistoryNav.older(ids, current: 1))  // at the oldest end
+        XCTAssertEqual(BenchHistoryNav.newer(ids, current: 1), 2)
+        XCTAssertEqual(BenchHistoryNav.newer(ids, current: 2), 3)
+    }
+
+    func testBenchHistoryNavEmptyAndSingle() {
+        XCTAssertNil(BenchHistoryNav.newest([]))
+        XCTAssertNil(BenchHistoryNav.older([], current: nil))
+        XCTAssertNil(BenchHistoryNav.older([9], current: nil))
+        XCTAssertNil(BenchHistoryNav.newer([9], current: nil))
+        XCTAssertEqual(BenchHistoryNav.newest([9]), 9)
+    }
+
+    func testDropdownWindowCapsAt25NewestFirstWithPerTabOrdinals() {
+        // 30 sends, sitting at the newest: dropdown shows the most recent 25,
+        // newest-first; ordinal is the 1-based per-tab position (index+1), NOT the
+        // global bench_history id.
+        let idx = BenchHistoryNav.windowIndices(count: 30, current: 29)
+        XCTAssertEqual(idx.count, 25)
+        XCTAssertEqual(idx.first, 29)  // newest (ordinal 30)
+        XCTAssertEqual(idx.last, 5)    // oldest still in window (ordinal 6)
+        XCTAssertEqual(BenchHistoryNav.ordinal(index: idx.first!), 30)
+        XCTAssertEqual(BenchHistoryNav.ordinal(index: idx.last!), 6)
+        // Send #1 (index 0) is OUTSIDE the newest window but reachable via the arrows.
+        XCTAssertFalse(idx.contains(0))
+        XCTAssertEqual(BenchHistoryNav.older(Array(0..<30), current: 5), 4)  // step past the window
+    }
+
+    func testDropdownWindowSlidesToContainCurrentPosition() {
+        // 26 sends, sitting at position 2 (index 1): the window must slide to the old
+        // end so #1 (index 0) AND the current #2 are both visible.
+        let atTwo = BenchHistoryNav.windowIndices(count: 26, current: 1)
+        XCTAssertEqual(atTwo.count, 25)
+        XCTAssertTrue(atTwo.contains(0))  // #1 visible
+        XCTAssertTrue(atTwo.contains(1))  // current #2 visible
+        XCTAssertEqual(atTwo.first, 24)   // newest-of-band (ordinal 25); band is 1..25
+        XCTAssertEqual(atTwo.last, 0)     // ordinal 1 at the bottom
+
+        // 26 sends at the newest (index 25): window is the most recent 25 (2..26).
+        let atLatest = BenchHistoryNav.windowIndices(count: 26, current: 25)
+        XCTAssertEqual(atLatest.count, 25)
+        XCTAssertEqual(atLatest.first, 25)      // ordinal 26
+        XCTAssertFalse(atLatest.contains(0))    // #1 not in the newest band
+        XCTAssertEqual(atLatest.last, 1)        // ordinal 2
+
+        // The arrow still reaches the true oldest regardless of the window: < from
+        // position 2 (index 1) reaches position 1 (index 0).
+        XCTAssertEqual(BenchHistoryNav.older(Array(0..<26), current: 1), 0)
+    }
+
+    func testDropdownWindowReflectsCurrentCount() {
+        // Regression: the dropdown must reflect the tab's CURRENT send count, not a
+        // stale earlier one (bug: counter showed 10/10 while the list stuck at 7).
+        let atSeven = BenchHistoryNav.windowIndices(count: 7, current: 6)
+        XCTAssertEqual(atSeven.count, 7)
+        XCTAssertEqual(atSeven.first, 6)  // newest of 7 (ordinal 7)
+        let atTen = BenchHistoryNav.windowIndices(count: 10, current: 9)
+        XCTAssertEqual(atTen.count, 10)
+        XCTAssertEqual(atTen.first, 9)  // newest of 10 (ordinal 10), not frozen at 7
+        XCTAssertEqual(BenchHistoryNav.ordinal(index: atTen.first!), 10)
+    }
+
+    func testDropdownWindowShowsAllWhenFewerThan25() {
+        // Two independent tabs each number their own sends from 1 (per-tab, not global).
+        let idx = BenchHistoryNav.windowIndices(count: 3, current: 2)
+        XCTAssertEqual(idx, [2, 1, 0])  // newest-first
+        XCTAssertEqual(idx.map { BenchHistoryNav.ordinal(index: $0) }, [3, 2, 1])
+        XCTAssertEqual(BenchHistoryNav.windowIndices(count: 0, current: 0), [])
+    }
+
     func testNon2xxThrowsControlAPIError() async {
         StubURLProtocol.responder = { _ in (401, Data(#"{"detail":"invalid token"}"#.utf8)) }
         do {

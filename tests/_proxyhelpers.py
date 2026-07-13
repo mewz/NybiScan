@@ -112,6 +112,115 @@ class Origin:
         self.server.shutdown()
 
 
+class RawCaptureOrigin:
+    """A one-shot socket server that captures the EXACT request bytes it receives
+    (for verbatim-fidelity tests) and returns a fixed response. Optionally TLS with
+    a self-signed cert (to test no-verify sends)."""
+
+    def __init__(self, tls: bool = False, tmp: Path | None = None,
+                 response: bytes = b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 2\r\n\r\nok"):
+        self.captured: bytes | None = None
+        self.response = response
+        self._tls = tls
+        self._ctx = None
+        if tls:
+            assert tmp is not None
+            certf, keyf = selfsigned_cert(tmp)
+            self._ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            self._ctx.load_cert_chain(certf, keyf)
+        self._sock = socket.socket()
+        self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._sock.bind(("127.0.0.1", 0))
+        self._sock.listen(1)
+        self.port = self._sock.getsockname()[1]
+        self._thread = threading.Thread(target=self._serve, daemon=True)
+        self._thread.start()
+
+    def _serve(self):
+        try:
+            conn, _ = self._sock.accept()
+            if self._ctx is not None:
+                conn = self._ctx.wrap_socket(conn, server_side=True)
+            conn.settimeout(3)
+            data = b""
+            while b"\r\n\r\n" not in data:
+                chunk = conn.recv(4096)
+                if not chunk:
+                    break
+                data += chunk
+            head, _, body = data.partition(b"\r\n\r\n")
+            cl = 0
+            for line in head.split(b"\r\n")[1:]:
+                if line.split(b":", 1)[0].strip().lower() == b"content-length":
+                    try:
+                        cl = int(line.split(b":", 1)[1].strip())
+                    except ValueError:
+                        cl = 0
+            # Read up to the declared body length, but tolerate a short timeout so a
+            # deliberately-wrong Content-Length does not hang; capture what arrived.
+            conn.settimeout(0.5)
+            while len(body) < cl:
+                try:
+                    more = conn.recv(4096)
+                except socket.timeout:
+                    break
+                if not more:
+                    break
+                body += more
+            self.captured = head + b"\r\n\r\n" + body
+            conn.sendall(self.response)
+            conn.close()
+        except Exception:
+            pass
+        finally:
+            try:
+                self._sock.close()
+            except Exception:
+                pass
+
+    def wait(self, timeout: float = 3.0):
+        self._thread.join(timeout)
+        return self.captured
+
+
+class StallOrigin:
+    """A one-shot socket server that accepts a connection and then NEVER responds,
+    holding it open. Used to test the send timeout (a hang - wrong Content-Length or
+    a nonresponsive server - must be bounded, not an unbounded block) and cancel (an
+    in-flight send aborted from another thread)."""
+
+    def __init__(self):
+        self.accepted = threading.Event()
+        self._sock = socket.socket()
+        self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._sock.bind(("127.0.0.1", 0))
+        self._sock.listen(1)
+        self.port = self._sock.getsockname()[1]
+        self._stop = threading.Event()
+        self._conn = None
+        self._thread = threading.Thread(target=self._serve, daemon=True)
+        self._thread.start()
+
+    def _serve(self):
+        try:
+            conn, _ = self._sock.accept()
+            self._conn = conn
+            self.accepted.set()
+            # Hold the connection open, sending nothing, until told to stop.
+            self._stop.wait(10)
+        except Exception:
+            pass
+
+    def stop(self):
+        self._stop.set()
+        for s in (self._conn, self._sock):
+            try:
+                if s is not None:
+                    s.close()
+            except Exception:
+                pass
+
+
 def proxy_opener(proxy_port: int, ca_cert: Path | None = None):
     handlers = [urllib.request.ProxyHandler({
         "http": f"http://127.0.0.1:{proxy_port}",

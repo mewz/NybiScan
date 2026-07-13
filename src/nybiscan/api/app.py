@@ -9,7 +9,7 @@ from typing import Callable, Optional
 from fastapi import FastAPI
 
 from .. import __version__
-from .routes import ca, config, history, health, projects, proxy, ws
+from .routes import bench, ca, config, history, health, projects, proxy, ws
 from .state import AppState
 
 
@@ -35,4 +35,5 @@ def create_app(state: AppState, on_startup: Optional[Callable[[AppState], None]]
     app.include_router(ws.router)
     app.include_router(config.router)
     app.include_router(ca.router)
+    app.include_router(bench.router)
     return app

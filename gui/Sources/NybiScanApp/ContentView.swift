@@ -13,7 +13,10 @@ struct ContentView: View {
             AuthGateView()
         case .ready:
             if model.project?.projectOpen == true {
-                MainView()
+                switch model.section {
+                case .history: MainView()
+                case .bench: BenchView()
+                }
             } else {
                 ProjectView()
             }

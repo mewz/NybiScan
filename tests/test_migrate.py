@@ -1,4 +1,4 @@
-"""Schema migration to the current version (v1 -> v3 and v2 -> v3)."""
+"""Schema migration to the current version (v1 -> v4 and v2 -> v4)."""
 
 from __future__ import annotations
 
@@ -100,35 +100,40 @@ def _build_bundle(bundle, history_ddl, version, passphrase=None):
     return bundle
 
 
-def _assert_v3(conn):
+def _assert_current(conn):
     cols = {row[1] for row in conn.execute("PRAGMA table_info(history)").fetchall()}
     assert {"flow_id", "req_content_encoding", "resp_content_encoding", "extension"} <= cols
     indexes = {row[1] for row in conn.execute("PRAGMA index_list(history)").fetchall()}
     assert "idx_history_flow_id" in indexes
+    # v4: Bench tables present.
+    tables = {
+        row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    }
+    assert {"bench_tabs", "bench_history"} <= tables
     version = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0]
-    assert version == "3"
+    assert version == "4"
 
 
 @pytest.mark.parametrize("passphrase", [None, "correct horse"])
-def test_migrate_v1_to_v3(tmp_path, passphrase):
+def test_migrate_v1_to_current(tmp_path, passphrase):
     bundle = _build_bundle(tmp_path / "v1.nybiscan", _V1_HISTORY, 1, passphrase=passphrase)
     proj = core_project.open_project(bundle, passphrase=passphrase)
     try:
-        _assert_v3(proj.read_conn)
+        _assert_current(proj.read_conn)
         db.migrate(proj.read_conn)  # idempotent no-op
-        _assert_v3(proj.read_conn)
+        _assert_current(proj.read_conn)
     finally:
         proj.close()
 
 
 @pytest.mark.parametrize("passphrase", [None, "correct horse"])
-def test_migrate_v2_to_v3(tmp_path, passphrase):
+def test_migrate_v2_to_current(tmp_path, passphrase):
     # A REAL v2 schema (flow_id + content_encoding present, extension absent):
     # migrate must add ONLY extension without a duplicate-column error.
     bundle = _build_bundle(tmp_path / "v2.nybiscan", _V2_HISTORY, 2, passphrase=passphrase)
 
     proj = core_project.open_project(bundle, passphrase=passphrase)  # runs migrate
-    _assert_v3(proj.read_conn)
+    _assert_current(proj.read_conn)
     # pre-existing row has a NULL extension read back correctly...
     assert proj.read_conn.execute(
         "SELECT extension FROM history WHERE url='/done'"
@@ -139,7 +144,7 @@ def test_migrate_v2_to_v3(tmp_path, passphrase):
     # read the new column back, proving ALTER + read work under SQLCipher.
     reopened = core_project.open_project(bundle, passphrase=passphrase)
     try:
-        _assert_v3(reopened.read_conn)
+        _assert_current(reopened.read_conn)
         assert reopened.read_conn.execute(
             "SELECT extension FROM history WHERE url='/done'"
         ).fetchone() == (None,)

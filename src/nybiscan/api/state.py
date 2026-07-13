@@ -8,7 +8,8 @@ for the Plan 1 shortcut where AppState type hints were dropped.
 from __future__ import annotations
 
 import asyncio
-from typing import Optional, Set
+import threading
+from typing import Any, Dict, Optional, Set
 
 from ..core.project import Project
 from ..core.proxy.engine import ProxyEngine
@@ -48,6 +49,27 @@ class AppState:
         self.ws_hub = WsHub()
         self.loop: Optional[asyncio.AbstractEventLoop] = None
         self._event_unsub = None
+        # In-flight Bench sends, keyed by tab id, so a /cancel from another request
+        # thread can abort the socket the (blocking) /send handler is waiting on.
+        self._bench_inflight: Dict[int, Any] = {}
+        self._bench_lock = threading.Lock()
+
+    def register_bench_send(self, tab_id: int, token: Any) -> None:
+        with self._bench_lock:
+            self._bench_inflight[tab_id] = token
+
+    def clear_bench_send(self, tab_id: int, token: Any) -> None:
+        with self._bench_lock:
+            if self._bench_inflight.get(tab_id) is token:
+                del self._bench_inflight[tab_id]
+
+    def cancel_bench_send(self, tab_id: int) -> bool:
+        with self._bench_lock:
+            token = self._bench_inflight.get(tab_id)
+        if token is not None:
+            token.cancel()
+            return True
+        return False
 
     def _bridge(self, event: dict) -> None:
         """Core EventHub subscriber (runs in the writer thread). Hand off to loop."""

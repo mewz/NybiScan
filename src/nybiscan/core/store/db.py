@@ -17,7 +17,7 @@ from typing import Optional
 
 from ..errors import WrongPassphraseError
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 _HISTORY_COLUMNS = (
     "flow_id",
@@ -115,6 +115,48 @@ CREATE TABLE IF NOT EXISTS scope (
 );
 """
 
+# Bench (Repeater analog) tables, added in schema v4. Kept as individual
+# statements so migrate() can run them inside its transaction (executescript
+# would force a commit and break the transactional migration). The raw request
+# text is the source of truth for the wire bytes (no structured header columns).
+_BENCH_STATEMENTS = (
+    """
+    CREATE TABLE IF NOT EXISTS bench_tabs (
+        id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+        name                    TEXT    NOT NULL DEFAULT 'Bench',
+        order_index             INTEGER NOT NULL DEFAULT 0,
+        raw_request             TEXT    NOT NULL DEFAULT '',
+        conn_host               TEXT    NOT NULL DEFAULT '',
+        conn_port               INTEGER NOT NULL DEFAULT 443,
+        conn_tls                INTEGER NOT NULL DEFAULT 1,
+        content_length_autofill INTEGER NOT NULL DEFAULT 1,
+        created_ts              INTEGER NOT NULL DEFAULT 0,
+        updated_ts              INTEGER NOT NULL DEFAULT 0
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS bench_history (
+        id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+        tab_id                  INTEGER NOT NULL,
+        req_raw                 TEXT    NOT NULL DEFAULT '',
+        conn_host               TEXT    NOT NULL DEFAULT '',
+        conn_port               INTEGER NOT NULL DEFAULT 443,
+        conn_tls                INTEGER NOT NULL DEFAULT 1,
+        content_length_autofill INTEGER NOT NULL DEFAULT 1,
+        status                  INTEGER,
+        resp_headers_raw        TEXT    NOT NULL DEFAULT '',
+        resp_body               BLOB,
+        resp_length             INTEGER NOT NULL DEFAULT 0,
+        mime_type               TEXT,
+        resp_content_encoding   TEXT,
+        error                   TEXT,
+        sent_ts                 INTEGER NOT NULL DEFAULT 0,
+        duration_ms             INTEGER NOT NULL DEFAULT 0
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_bench_history_tab ON bench_history(tab_id)",
+)
+
 
 def _connect(path: str, key: Optional[bytes], check_same_thread: bool):
     if key is None:
@@ -165,6 +207,8 @@ def open_connection(
 
 def create_schema(conn) -> None:
     conn.executescript(_DDL)
+    for statement in _BENCH_STATEMENTS:
+        conn.execute(statement)
     conn.commit()
 
 
@@ -196,6 +240,9 @@ def migrate(conn) -> None:
             if name not in existing:
                 conn.execute(f"ALTER TABLE history ADD COLUMN {name} {coltype}")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_history_flow_id ON history(flow_id)")
+        # v4: Bench tables (CREATE IF NOT EXISTS is idempotent).
+        for statement in _BENCH_STATEMENTS:
+            conn.execute(statement)
         conn.execute(
             "INSERT INTO meta (key, value) VALUES ('schema_version', ?) "
             "ON CONFLICT(key) DO UPDATE SET value = excluded.value",

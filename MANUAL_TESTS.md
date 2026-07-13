@@ -348,3 +348,109 @@ app.
 - Expected: the guard FAILS while the bogus target is referenced and passes once
   reverted, so stale make-target docs cannot ship.
 - Verified: Plan 3.5
+
+---
+
+## Plan 4 - Bench (Repeater analog)
+
+### 4.1 Create, edit, and send a Bench request
+- What: craft a request and send it verbatim, directly (not through the proxy).
+- Command: open a project; switch to Bench (the History/Bench toggle); click + to
+  create a tab. Set the connection bar (host:port + HTTPS checkbox) and edit the
+  raw request (try an arbitrary METHOD like `FOOBAR` and a custom header). Press
+  Send (Cmd-Return). The GUI calls `/bench/tabs` and `/bench/tabs/{id}/send`.
+- Expected: the response renders in the lower pane (status, headers, decoded
+  body); the send is recorded in the tab's history. Bench sends do NOT appear in
+  the main History view (separation).
+- Verified: Plan 4
+
+### 4.2 Content-Length auto-fill toggle
+- What: verbatim Content-Length control.
+- Command: with "Auto C-L" ON, edit the body and send (Content-Length is
+  recomputed to match). Turn "Auto C-L" OFF, set a deliberately-wrong
+  Content-Length in the raw request, and send.
+- Expected: with the toggle on, the sent Content-Length matches the body; with it
+  off, the wrong value is sent exactly as typed (required for smuggling/desync
+  tests). Nothing else in the request is altered either way.
+- Verified: Plan 4
+
+### 4.3 Connection bar is definitive; Host header is independent
+- What: the socket target is the bar, not the Host header.
+- Command: point the connection bar at one host:port but leave a DIFFERENT `Host:`
+  header in the raw request. Send.
+- Expected: Bench connects to the BAR's host:port and sends the typed Host header
+  verbatim (never rewritten or synced). A mismatch is a supported test case.
+- Verified: Plan 4
+
+### 4.4 TLS does not verify
+- What: Bench connects regardless of cert validity, like the proxy.
+- Command: send an HTTPS request (HTTPS checkbox on) to a host with a self-signed
+  or invalid certificate.
+- Expected: the send succeeds and the response renders (no cert error, not
+  blocked). A host that is unreachable / cannot complete the handshake shows a
+  clear failure in the response pane instead.
+- Verified: Plan 4
+
+### 4.5 Send to Bench, tabs, per-tab history, persistence
+- What: seed from capture, manage tabs, step history, persist across reopen.
+- Command: in History, right-click a captured row -> "Send to Bench" (calls
+  `/bench/tabs` seeded, opening a prefilled tab; a dropped binary body is noted).
+  Rename a tab (right-click) and create several tabs. Send a tab a few times and
+  step back/forth through its history via the response-pane `<` / `>` arrows AND the
+  dropdown on the `<` control to jump directly to any send (uses
+  `/bench/tabs/{id}/history` and `/bench/history/{entry_id}`). Quit and reopen the
+  project.
+- Expected: the seeded tab is prefilled with the captured request (editable);
+  tabs rename/close; the arrows step one send at a time and the dropdown jumps to any
+  send, each restoring BOTH the request editor and the response pane; after reopening
+  the project, Bench tabs and their history PERSIST.
+- Verified: Plan 4
+
+### 4.6a History dropdown: per-tab ordinals, capped at 25, all stored
+- What: the dropdown labels each send with its PER-TAB ordinal (1..N), not the global
+  id, and windows to the 25 most recent while keeping every send.
+- Command: on one tab, send more than 25 times. Open the `<` dropdown. Then create a
+  second tab and send it a few times; open its dropdown. On the busy tab, use the `<`
+  arrow to step older past the 25-entry window down to send 1.
+- Expected: labels read `1, 2, 3 ...` per tab (each tab starts its own 1), NOT global
+  `#12, #13 ...`; the dropdown shows at most 25 entries; the `x/N` indicator reflects
+  ALL sends (N > 25). The 25-entry window SLIDES to always contain the current
+  position: at the newest it shows the most recent 25, and when you step to position 2
+  of 26 the dropdown shows the oldest band (1..25) so send 1 is visible. The `<` arrow
+  reaches send 1 regardless of the window. Nothing is trimmed from storage.
+- Also: send more, reopen the dropdown, and confirm the newest sends now appear (the
+  list refreshes live, it does not freeze at an earlier count); pick one entry then a
+  different entry and confirm the request/response switches each time (selection does
+  not stick on the first pick); switch tabs and back and confirm each tab shows its
+  own current list.
+- Verified: Plan 4
+
+### 4.8 Closing a tab discards its history (no orphans)
+- What: closing a tab removes that tab's send history (no confirmation prompt).
+- Command: send a tab a few times, then right-click the tab -> Close.
+- Expected: the tab closes immediately (no prompt) and its `bench_history` rows are
+  deleted (nothing orphaned or kept). On an encrypted project this means the
+  decrypted test-request history is actually discarded, not left in the db.
+- Verified: Plan 4
+
+### 4.6 Send/Cancel lifecycle: non-blocking, cancellable, bounded
+- What: a send stays responsive; a hang is recoverable (Cancel) and bounded (timeout).
+- Command: send a normal request and watch the Send button become Cancel with a
+  spinner while in flight. Then turn "Auto C-L" OFF, set a Content-Length LARGER than
+  the body (e.g. `Content-Length: 5000` on a tiny/empty body) so the server waits for
+  bytes that never come, and Send. While it hangs, click Cancel (calls
+  `/bench/tabs/{id}/cancel`). Separately, let one such send run without cancelling.
+- Expected: the UI never freezes; clicking Cancel aborts the send promptly and the
+  button returns to Send. A send left alone times out on its own. Either way the
+  outcome is recorded as a new history entry (`cancelled` or `timeout`) that you can
+  step to. The wrong Content-Length is NOT corrected; it goes out as typed.
+- Verified: Plan 4
+
+### 4.7 Send to Bench from the detail pane
+- What: seed a Bench tab while reading a request in the detail view.
+- Command: in History, select a row, then right-click inside the request/response
+  detail text and choose "Send to Bench" (same seed as the row action).
+- Expected: a prefilled Bench tab opens (connection bar + reconstructed raw request,
+  h2 -> h1.1 rules, dropped-body noted); the detail pane's normal Copy/Paste are
+  still present alongside "Send to Bench".
+- Verified: Plan 4

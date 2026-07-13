@@ -54,6 +54,13 @@ struct MainView: View {
         .onReceive(resortTick) { _ in resort(force: false) }
         .onAppear { resort(force: true) }
         .toolbar {
+            ToolbarItem(placement: .principal) {
+                Picker("", selection: $model.section) {
+                    Text("History").tag(AppSection.history)
+                    Text("Bench").tag(AppSection.bench)
+                }
+                .pickerStyle(.segmented).frame(width: 180)
+            }
             ToolbarItem {
                 Button { showOptions = true } label: { Label("Options", systemImage: "gearshape") }
             }
@@ -156,6 +163,11 @@ struct MainView: View {
                 .width(min: 118, ideal: 128, max: 140)  // fits 255.255.255.255
             TableColumn("Time", value: \.reqStartTs) { Text(Self.timeString($0.reqStartTs)) }
                 .width(min: 72, ideal: 82, max: 96)
+        }
+        .contextMenu(forSelectionType: Int.self) { ids in
+            if let id = ids.first {
+                Button("Send to Bench") { Task { await model.sendToBench(historyId: id) } }
+            }
         }
     }
 

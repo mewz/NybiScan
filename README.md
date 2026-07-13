@@ -3,6 +3,36 @@
 A lightweight, project-based HTTP/HTTPS intercepting proxy for AUTHORIZED
 penetration testing. Named after the owner's cat, Nybble.
 
+## Purpose
+
+NybiScan aims to provide the proven manual-testing workflow of tools like Burp
+Suite and OWASP ZAP - capture proxy history, inspect requests and responses, replay
+and edit requests (Bench), and map and spider a target - in a smaller, native macOS
+package built on an OS-agnostic core. It is for security testing of systems you are
+explicitly authorized to test.
+
+It additionally aims to expose an MCP server (planned) so that AI agents (Claude or
+others) can interact with captured history and drive spidering and testing
+programmatically. Those AI-driven capabilities are scoped to the same authorized-use
+context as the rest of the tool: they are only for testing systems you are
+authorized to test.
+
+### Built today
+
+- Intercepting HTTP/HTTPS proxy with live capture history.
+- Request and response detail inspection.
+- Bench: a repeater-style surface to replay and edit requests verbatim, with
+  per-tab send history.
+- Project persistence (a self-contained `.nybiscan` bundle, plaintext or encrypted).
+- CA lifecycle (generate, import, export) for HTTPS interception.
+- Makefile build orchestration across the Python core and the Swift GUI.
+
+### Roadmap (planned, not yet built)
+
+- Dashboard site-map and scoped spider (Plan 5).
+- MCP server over the core so AI agents can drive history and testing (Plan 6).
+- A Claude skill for MCP-driven source review and testing (Plan 7).
+
 ## Authorized use only
 
 NybiScan is for authorized security testing only. Use it only against systems you

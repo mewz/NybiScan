@@ -15,6 +15,10 @@ struct RequestResponseView: View {
     let detail: HistoryDetail
     @Binding var tab: DetailTab
     var editable: Bool = false  // reserved for Bench (Plan 4); ignored here
+    // Optional detail-pane context action (e.g. "Send to Bench") shown on the
+    // read-only text view alongside Copy/Paste.
+    var secondaryMenuTitle: String? = nil
+    var onSecondary: (() -> Void)? = nil
 
     @State private var requestText = ""
     @State private var responseText = ""
@@ -43,14 +47,14 @@ struct RequestResponseView: View {
     @ViewBuilder private var content: some View {
         switch tab {
         case .request:
-            RawTextView(text: requestText)
+            RawTextView(text: requestText, secondaryMenuTitle: secondaryMenuTitle, onSecondary: onSecondary)
         case .response:
             if detail.captureStatus == "pending" {
                 centered { HStack { ProgressView().controlSize(.small); Text("Waiting for response...") } }
             } else if detail.captureStatus == "error" {
                 centered { Text("Request errored; no response captured.").foregroundStyle(.red) }
             } else {
-                RawTextView(text: responseText)
+                RawTextView(text: responseText, secondaryMenuTitle: secondaryMenuTitle, onSecondary: onSecondary)
             }
         }
     }
@@ -93,11 +97,63 @@ struct RequestResponseView: View {
     }
 }
 
+/// An EDITABLE monospaced text view for composing a raw request (Bench). Smart
+/// quotes/dashes/replacement are OFF so raw HTTP bytes are never mangled. Two-way
+/// bound to a String.
+struct EditableRawTextView: NSViewRepresentable {
+    @Binding var text: String
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scroll = NSTextView.scrollableTextView()
+        scroll.hasVerticalScroller = true
+        if let tv = scroll.documentView as? NSTextView {
+            tv.isEditable = true
+            tv.isRichText = false
+            tv.allowsUndo = true
+            tv.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+            tv.textContainerInset = NSSize(width: 8, height: 8)
+            tv.isAutomaticQuoteSubstitutionEnabled = false
+            tv.isAutomaticDashSubstitutionEnabled = false
+            tv.isAutomaticTextReplacementEnabled = false
+            tv.isAutomaticSpellingCorrectionEnabled = false
+            tv.delegate = context.coordinator
+            tv.string = text
+        }
+        return scroll
+    }
+
+    func updateNSView(_ scroll: NSScrollView, context: Context) {
+        guard let tv = scroll.documentView as? NSTextView else { return }
+        // Only overwrite when the model changed externally (e.g. tab switch), so we
+        // do not clobber the caret while the user types.
+        if tv.string != text {
+            tv.string = text
+        }
+    }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        let parent: EditableRawTextView
+        init(_ parent: EditableRawTextView) { self.parent = parent }
+        func textDidChange(_ notification: Notification) {
+            guard let tv = notification.object as? NSTextView else { return }
+            parent.text = tv.string
+        }
+    }
+}
+
 /// A read-only, selectable, scrollable monospaced text view. Unlike SwiftUI Text,
 /// it paints large content immediately: on update we set the string and force a
 /// full layout + display, so a large body does not stay blank until an interaction.
 struct RawTextView: NSViewRepresentable {
     let text: String
+    // Optional extra context-menu item (e.g. "Send to Bench" in the detail pane),
+    // appended to the NSTextView's own menu so Cut/Copy/Paste are preserved.
+    var secondaryMenuTitle: String? = nil
+    var onSecondary: (() -> Void)? = nil
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     func makeNSView(context: Context) -> NSScrollView {
         let scroll = NSTextView.scrollableTextView()
@@ -112,11 +168,13 @@ struct RawTextView: NSViewRepresentable {
             tv.textContainerInset = NSSize(width: 8, height: 8)
             tv.textContainer?.widthTracksTextView = true
             tv.isVerticallyResizable = true
+            tv.delegate = context.coordinator
         }
         return scroll
     }
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
+        context.coordinator.parent = self  // keep the latest closure/title
         guard let tv = scroll.documentView as? NSTextView else { return }
         if tv.string != text {
             tv.string = text
@@ -128,5 +186,23 @@ struct RawTextView: NSViewRepresentable {
             tv.needsLayout = true
             tv.needsDisplay = true
         }
+    }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        var parent: RawTextView
+        init(_ parent: RawTextView) { self.parent = parent }
+
+        func textView(_ view: NSTextView, menu: NSMenu, for event: NSEvent, at charIndex: Int) -> NSMenu? {
+            guard let title = parent.secondaryMenuTitle, parent.onSecondary != nil else { return menu }
+            menu.addItem(.separator())
+            let item = NSMenuItem(title: title, action: #selector(invokeSecondary), keyEquivalent: "")
+            item.target = self
+            menu.addItem(item)
+            return menu
+        }
+
+        // Menu actions fire on the main thread; isolate so the main-actor closure
+        // can be called without a nonisolated-context warning.
+        @MainActor @objc private func invokeSecondary() { parent.onSecondary?() }
     }
 }
