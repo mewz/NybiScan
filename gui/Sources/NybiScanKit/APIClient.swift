@@ -138,4 +138,43 @@ public struct ControlAPIClient: Sendable {
     public func benchSendDetail(_ id: Int) async throws -> BenchSendDetail {
         try await send("GET", "/bench/history/\(id)")
     }
+
+    // ----- Plan 5: scope, site-map, spider ----------------------------------
+
+    public func sitemap() async throws -> [SitemapHost] { try await send("GET", "/sitemap") }
+
+    public func hostMap(_ host: String) async throws -> SitemapHost {
+        try await send("GET", "/sitemap/\(host)")
+    }
+
+    /// Hide a host or path subtree from the map VIEW only (history rows are kept).
+    public func hideSitemapNode(_ payload: HideSitemapPayload) async throws {
+        try await sendNoContent("POST", "/sitemap/hide", body: try Self.encode(payload))
+    }
+
+    public func unhideSitemapNode(_ payload: HideSitemapPayload) async throws {
+        try await sendNoContent("POST", "/sitemap/unhide", body: try Self.encode(payload))
+    }
+
+    public func scope() async throws -> [ScopeHost] { try await send("GET", "/scope") }
+
+    public func addScope(_ payload: ScopeAddPayload) async throws -> [ScopeHost] {
+        try await send("POST", "/scope", body: try Self.encode(payload))
+    }
+
+    public func updateScope(_ host: String, _ payload: ScopeUpdatePayload) async throws -> [ScopeHost] {
+        try await send("PUT", "/scope/\(host)", body: try Self.encode(payload))
+    }
+
+    public func removeScope(_ host: String) async throws {
+        try await sendNoContent("DELETE", "/scope/\(host)")
+    }
+
+    public func spiderStart(_ payload: SpiderStartPayload) async throws -> SpiderStatus {
+        try await send("POST", "/spider/start", body: try Self.encode(payload))
+    }
+
+    public func spiderStop() async throws { try await sendNoContent("POST", "/spider/stop") }
+
+    public func spiderStatus() async throws -> SpiderStatus { try await send("GET", "/spider/status") }
 }

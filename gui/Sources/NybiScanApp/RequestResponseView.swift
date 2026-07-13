@@ -15,10 +15,9 @@ struct RequestResponseView: View {
     let detail: HistoryDetail
     @Binding var tab: DetailTab
     var editable: Bool = false  // reserved for Bench (Plan 4); ignored here
-    // Optional detail-pane context action (e.g. "Send to Bench") shown on the
-    // read-only text view alongside Copy/Paste.
-    var secondaryMenuTitle: String? = nil
-    var onSecondary: (() -> Void)? = nil
+    // Optional detail-pane context actions (e.g. Send to Bench, Add to Scope) shown
+    // on the read-only text view alongside Copy/Paste.
+    var secondaryActions: [MenuAction] = []
 
     @State private var requestText = ""
     @State private var responseText = ""
@@ -47,14 +46,14 @@ struct RequestResponseView: View {
     @ViewBuilder private var content: some View {
         switch tab {
         case .request:
-            RawTextView(text: requestText, secondaryMenuTitle: secondaryMenuTitle, onSecondary: onSecondary)
+            RawTextView(text: requestText, secondaryActions: secondaryActions)
         case .response:
             if detail.captureStatus == "pending" {
                 centered { HStack { ProgressView().controlSize(.small); Text("Waiting for response...") } }
             } else if detail.captureStatus == "error" {
                 centered { Text("Request errored; no response captured.").foregroundStyle(.red) }
             } else {
-                RawTextView(text: responseText, secondaryMenuTitle: secondaryMenuTitle, onSecondary: onSecondary)
+                RawTextView(text: responseText, secondaryActions: secondaryActions)
             }
         }
     }
@@ -146,12 +145,18 @@ struct EditableRawTextView: NSViewRepresentable {
 /// A read-only, selectable, scrollable monospaced text view. Unlike SwiftUI Text,
 /// it paints large content immediately: on update we set the string and force a
 /// full layout + display, so a large body does not stay blank until an interaction.
+/// A named action appended to a read-only text view's context menu.
+struct MenuAction: Identifiable {
+    let id = UUID()
+    let title: String
+    let perform: () -> Void
+}
+
 struct RawTextView: NSViewRepresentable {
     let text: String
-    // Optional extra context-menu item (e.g. "Send to Bench" in the detail pane),
-    // appended to the NSTextView's own menu so Cut/Copy/Paste are preserved.
-    var secondaryMenuTitle: String? = nil
-    var onSecondary: (() -> Void)? = nil
+    // Extra context-menu items (e.g. Send to Bench, Add to Scope), appended to the
+    // NSTextView's own menu so Cut/Copy/Paste are preserved.
+    var secondaryActions: [MenuAction] = []
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -193,16 +198,22 @@ struct RawTextView: NSViewRepresentable {
         init(_ parent: RawTextView) { self.parent = parent }
 
         func textView(_ view: NSTextView, menu: NSMenu, for event: NSEvent, at charIndex: Int) -> NSMenu? {
-            guard let title = parent.secondaryMenuTitle, parent.onSecondary != nil else { return menu }
+            guard !parent.secondaryActions.isEmpty else { return menu }
             menu.addItem(.separator())
-            let item = NSMenuItem(title: title, action: #selector(invokeSecondary), keyEquivalent: "")
-            item.target = self
-            menu.addItem(item)
+            for (i, action) in parent.secondaryActions.enumerated() {
+                let item = NSMenuItem(title: action.title, action: #selector(invokeAction(_:)), keyEquivalent: "")
+                item.target = self
+                item.tag = i
+                menu.addItem(item)
+            }
             return menu
         }
 
-        // Menu actions fire on the main thread; isolate so the main-actor closure
+        // Menu actions fire on the main thread; isolate so the main-actor closures
         // can be called without a nonisolated-context warning.
-        @MainActor @objc private func invokeSecondary() { parent.onSecondary?() }
+        @MainActor @objc private func invokeAction(_ sender: NSMenuItem) {
+            let actions = parent.secondaryActions
+            if actions.indices.contains(sender.tag) { actions[sender.tag].perform() }
+        }
     }
 }

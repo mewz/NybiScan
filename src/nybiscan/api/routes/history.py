@@ -38,6 +38,8 @@ def _summary(rec: HistoryRecord) -> dict:
         "capture_status": rec.capture_status.value,
         "req_start_ts": rec.req_start_ts,
         "resp_complete_ts": rec.resp_complete_ts,
+        "source": rec.source,
+        "spider_run_id": rec.spider_run_id,
     }
 
 

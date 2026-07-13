@@ -4,6 +4,23 @@ import Foundation
 // JSON keys map to camelCase properties via convertFromSnakeCase (see NybiCoders),
 // so no CodingKeys boilerplate is needed.
 
+public enum Formatting {
+    /// A port is an IDENTIFIER, not a quantity: render as a raw integer string with no
+    /// thousands separator (SwiftUI's LocalizedStringKey would otherwise group it).
+    public static func port(_ port: Int) -> String { String(port) }
+}
+
+/// Per-section view state (a selection anchor) that PERSISTS across tab switches.
+/// Switching away and back must NOT reset it - it is not re-initialized on reappear.
+public struct SectionMemory: Sendable, Equatable {
+    private var selection: [String: Int] = [:]
+    public init() {}
+    public func selection(for section: String) -> Int? { selection[section] }
+    public mutating func setSelection(_ id: Int?, for section: String) {
+        selection[section] = id
+    }
+}
+
 public enum NybiCoders {
     public static func makeDecoder() -> JSONDecoder {
         let d = JSONDecoder()
@@ -119,12 +136,13 @@ public struct HistorySummary: Codable, Sendable, Equatable, Identifiable {
     public let captureStatus: String
     public let reqStartTs: Int
     public let respCompleteTs: Int?
+    public let source: String?  // "browser" (proxy) or "spider" (crawl)
 
     public init(
         id: Int, flowId: String?, scheme: String, host: String, port: Int,
         method: String, url: String, `extension`: String?, status: Int?,
         mimeType: String?, respLength: Int, remoteIp: String?, captureStatus: String,
-        reqStartTs: Int, respCompleteTs: Int?
+        reqStartTs: Int, respCompleteTs: Int?, source: String? = nil
     ) {
         self.id = id
         self.flowId = flowId
@@ -141,6 +159,7 @@ public struct HistorySummary: Codable, Sendable, Equatable, Identifiable {
         self.captureStatus = captureStatus
         self.reqStartTs = reqStartTs
         self.respCompleteTs = respCompleteTs
+        self.source = source
     }
 
     /// A lightweight placeholder row built from an entry_created event, which
@@ -318,5 +337,95 @@ public struct UpdateBenchTabPayload: Encodable, Sendable {
         self.name = name; self.orderIndex = orderIndex; self.rawRequest = rawRequest
         self.connHost = connHost; self.connPort = connPort; self.connTls = connTls
         self.contentLengthAutofill = contentLengthAutofill
+    }
+}
+
+// ----- Plan 5: scope, site-map, spider -------------------------------------
+
+public struct ScopeHost: Codable, Sendable, Equatable, Identifiable {
+    public let id: Int?
+    public let host: String
+    public let note: String?
+    public let headers: String?
+    public var identity: String { host }  // stable id for lists
+}
+
+public struct ScopeAddPayload: Encodable, Sendable {
+    public let host: String
+    public let note: String?
+    public let headers: String?
+    public init(host: String, note: String? = nil, headers: String? = nil) {
+        self.host = host; self.note = note; self.headers = headers
+    }
+}
+
+public struct ScopeUpdatePayload: Encodable, Sendable {
+    public let headers: String?
+    public init(headers: String?) { self.headers = headers }
+}
+
+/// One path node in a host's site-map tree. Recursive via `children`.
+public struct SitemapNode: Codable, Sendable, Equatable, Identifiable {
+    public let name: String
+    public let fullPath: String
+    public let entryIds: [Int]
+    public let methods: [String]
+    public let statuses: [Int]
+    public let sources: [String]
+    public let children: [SitemapNode]
+    public var id: String { fullPath }
+}
+
+public struct SitemapHost: Codable, Sendable, Equatable, Identifiable {
+    public let scheme: String
+    public let host: String
+    public let port: Int
+    public let entryCount: Int
+    public let root: SitemapNode
+    public var id: String { "\(scheme)://\(host):\(port)" }
+}
+
+public struct HideSitemapPayload: Encodable, Sendable {
+    public let scheme: String
+    public let host: String
+    public let port: Int
+    public let path: String?  // nil hides the whole host; a path hides it + descendants
+    public init(scheme: String, host: String, port: Int, path: String? = nil) {
+        self.scheme = scheme; self.host = host; self.port = port; self.path = path
+    }
+}
+
+public struct SpiderStatus: Codable, Sendable, Equatable {
+    public let running: Bool
+    public let found: Int
+    public let saved: Int
+    public let cap: Int
+    public let current: String?
+    public let runId: String?
+}
+
+public struct SpiderExclude: Codable, Sendable, Equatable, Identifiable {
+    public var pattern: String
+    public var isRegex: Bool
+    public var id = UUID()
+    public init(pattern: String, isRegex: Bool = false) {
+        self.pattern = pattern; self.isRegex = isRegex
+    }
+    // The API exchanges only pattern + is_regex; id is a client-side list key.
+    enum CodingKeys: String, CodingKey { case pattern; case isRegex }
+}
+
+public struct SpiderStartPayload: Encodable, Sendable {
+    public let seedHistoryId: Int
+    public let maxDepth: Int
+    public let exclude: [SpiderExclude]?
+    public let rateLimitMs: Int
+    public let maxRequests: Int
+    public let includeBinary: Bool
+    public init(seedHistoryId: Int, maxDepth: Int = 3, exclude: [SpiderExclude]? = nil,
+                rateLimitMs: Int = 500, maxRequests: Int = 300, includeBinary: Bool = false) {
+        self.seedHistoryId = seedHistoryId; self.maxDepth = maxDepth; self.exclude = exclude
+        self.rateLimitMs = rateLimitMs; self.maxRequests = maxRequests
+        self.includeBinary = includeBinary
     }
 }

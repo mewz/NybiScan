@@ -17,7 +17,7 @@ from typing import Optional
 
 from ..errors import WrongPassphraseError
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 _HISTORY_COLUMNS = (
     "flow_id",
@@ -46,6 +46,9 @@ _HISTORY_COLUMNS = (
     "resp_content_encoding",
     "resp_complete_ts",
     "capture_status",
+    # v5: source (browser | spider) and the spider run id that produced a row.
+    "source",
+    "spider_run_id",
 )
 
 # Columns added after schema v1, applied to an older db by migrate(). Each entry
@@ -59,7 +62,15 @@ _V2_COLUMNS = (
     ("resp_content_encoding", "TEXT"),
 )
 _V3_COLUMNS = (("extension", "TEXT"),)
-_MIGRATION_COLUMNS = _V2_COLUMNS + _V3_COLUMNS
+# v5: request source and the spider run id. source defaults to 'browser' so every
+# pre-v5 row (all captured traffic) reads back as browser-sourced.
+_V5_COLUMNS = (
+    ("source", "TEXT NOT NULL DEFAULT 'browser'"),
+    ("spider_run_id", "TEXT"),
+)
+_MIGRATION_COLUMNS = _V2_COLUMNS + _V3_COLUMNS + _V5_COLUMNS
+# v5: scope gains stored session headers (per-host), added by migrate() too.
+_V5_SCOPE_COLUMNS = (("headers", "TEXT"),)
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -94,10 +105,13 @@ CREATE TABLE IF NOT EXISTS history (
     resp_body_dropped     INTEGER NOT NULL DEFAULT 0,
     resp_content_encoding TEXT,
     resp_complete_ts      INTEGER,
-    capture_status        TEXT    NOT NULL DEFAULT 'pending'
+    capture_status        TEXT    NOT NULL DEFAULT 'pending',
+    source                TEXT    NOT NULL DEFAULT 'browser',
+    spider_run_id         TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_history_host ON history(host);
 CREATE INDEX IF NOT EXISTS idx_history_flow_id ON history(flow_id);
+CREATE INDEX IF NOT EXISTS idx_history_spider_run ON history(spider_run_id);
 
 CREATE TABLE IF NOT EXISTS sites (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -109,9 +123,10 @@ CREATE TABLE IF NOT EXISTS sites (
 );
 
 CREATE TABLE IF NOT EXISTS scope (
-    id   INTEGER PRIMARY KEY AUTOINCREMENT,
-    host TEXT    NOT NULL UNIQUE,
-    note TEXT
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    host    TEXT    NOT NULL UNIQUE,
+    note    TEXT,
+    headers TEXT
 );
 """
 
@@ -212,8 +227,8 @@ def create_schema(conn) -> None:
     conn.commit()
 
 
-def _existing_columns(conn) -> set:
-    return {row[1] for row in conn.execute("PRAGMA table_info(history)").fetchall()}
+def _existing_columns(conn, table: str = "history") -> set:
+    return {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
 
 
 def _schema_version(conn) -> int:
@@ -234,12 +249,20 @@ def migrate(conn) -> None:
         return
 
     existing = _existing_columns(conn)
+    existing_scope = _existing_columns(conn, "scope")
     conn.execute("BEGIN")
     try:
         for name, coltype in _MIGRATION_COLUMNS:
             if name not in existing:
                 conn.execute(f"ALTER TABLE history ADD COLUMN {name} {coltype}")
+        # v5: scope stored session headers.
+        for name, coltype in _V5_SCOPE_COLUMNS:
+            if name not in existing_scope:
+                conn.execute(f"ALTER TABLE scope ADD COLUMN {name} {coltype}")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_history_flow_id ON history(flow_id)")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_history_spider_run ON history(spider_run_id)"
+        )
         # v4: Bench tables (CREATE IF NOT EXISTS is idempotent).
         for statement in _BENCH_STATEMENTS:
             conn.execute(statement)

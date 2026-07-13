@@ -370,3 +370,85 @@ Terse log of locked decisions. Newest context lives in CLAUDE.md.
   the planned AI/MCP capability, both under the same authorized-use framing, with an
   explicit built-today vs roadmap split so the doc never claims unbuilt features
   (same doc-currency discipline as the grep-guard).
+
+## Locked (Plan 5: site-map + scope + spider)
+
+- One database, one writer. Spider records go into the SAME `history` table via the
+  SAME single BatchWriter, tagged `source=spider`; the site-map is a QUERY/VIEW over
+  history (built from one scan, grouped by host, path split into a tree), not a second
+  store. A `source` column (default `browser`) and a `spider_run_id` column were added
+  in the v4->v5 migration; scope gained a `headers` column. No second DB: the map is a
+  view, not separate data, and a second DB would double the encryption/migration burden
+  for concurrency the rate-limited spider does not need.
+- Spider records DIRECTLY, not through the proxy. The spider is the core making
+  requests (reusing the Bench low-level send: TLS-no-verify, response read, decompress);
+  routing them back through its own proxy is a pointless round-trip and would clutter
+  browser history. Still one writer, no competing connection.
+- found vs saved: `found` is the engine's in-memory count of recorded fetches; `saved`
+  is `COUNT(*) WHERE spider_run_id=<run_id>` via the read connection. Each spider row
+  carries a dedicated `spider_run_id` (NOT a `flow_id` overload). The engine flushes the
+  writer when a run finishes, so on completion saved == found; on early Stop only
+  un-fetched frontier URLs are dropped (acceptable: the spider is re-runnable).
+- Scope pulled into Plan 5 (resolves the CLAUDE.md "refuse out-of-scope" constraint).
+  Scope = in-scope bare hosts in the bundle (existing `scope` table + new per-host CRUD:
+  `add_scope_host`/`update_scope_headers`/`remove_scope_host`). The DB `scope` table is
+  the runtime source of truth for enforcement; `project.toml`'s `scope` stays the
+  creation-time seed and is NOT kept in sync. Exact bare-host matching (wildcard/
+  subdomain patterns deferred). The spider follows ANY in-scope host (multi-host within
+  scope) and REFUSES out-of-scope; starting on an out-of-scope seed host ERRORS (400,
+  "add it first") - no auto-add, explicit add is the authorized-use gesture. `DELETE`
+  scope removes ONLY the scope row and NEVER cascades to that host's spider findings.
+- Session headers are PER-SCOPE-ENTRY, not seed-inherited. Adding a host to scope
+  captures THAT request's headers (incl. Cookie); the spider crawls each host with its
+  OWN stored headers, so following an in-scope link to a different host uses that host's
+  session and an in-scope host with no stored headers is crawled unauthenticated. This
+  eliminates cross-host token leakage by construction. "Update session" refreshes a
+  host's stored headers without losing findings. Per-run header override is deferred.
+- Spider rails are MANDATORY (automated active testing needs the rails the manual Bench
+  did not): a start-confirmation sheet showing the full config, a configurable rate
+  limit with a safe default (500ms) waited via an INTERRUPTIBLE stop-event (Stop is
+  prompt even at a high rate limit), a hard `max_requests` cap (default 300), prompt
+  Stop, and ABSOLUTE exclude-list enforcement checked before EVERY fetch. Exclude
+  entries are string (segment/prefix match, over-exclude erring safe) OR regex, with
+  regex validated at start (400 on a malformed pattern, never mid-crawl).
+- NO no_parent flag: the spider ALWAYS crawls from the seed path downward and never
+  ascends above it (seed `/foo` crawls `/foo` and below; seed `/` crawls the whole
+  host). The user controls breadth by choosing where to seed. The seed-subtree limit
+  applies to the seed host; other in-scope hosts are bounded by scope + depth + cap.
+- Site-map shows ONLY actually-mapped/fetched nodes (Burp's black boxes). The grey
+  seen-but-not-visited two-state is deferred; no known-vs-fetched tracking now.
+- beautifulsoup4 added for deterministic href/src/form-action extraction (robust on
+  malformed real-world HTML - a missed link is a missed endpoint). JS-rendered / SPA
+  links are deferred (no headless browser); CSS/JS/SVG are text and are mapped, other
+  binary (images/fonts/archives) is skipped unless include-binary is set.
+
+## Locked (Plan 5 finisher)
+
+- Site-map node "Delete" = MAP-HIDE only, never history deletion. Hidden keys (a host
+  key, or a host+path prefix) persist as a JSON list in `meta` (`sitemap_hidden`); the
+  site-map query filters rows whose host is hidden or whose path is at/below a hidden
+  prefix. The underlying history rows are untouched and stay in the History tab; hiding
+  survives reopen (plaintext + encrypted) and is reversible (`/sitemap/unhide`). A view
+  filter must never destroy evidence.
+- Directly-fetched paths, including the root `/` and any directory fetched directly,
+  are their own nodes carrying their own entry_ids (the core already did this; the
+  dashboard now renders the `/` index node and directory-self nodes). This is a
+  prerequisite for seeding a spider from a dashboard node.
+- The spider can be seeded from a site-map node (its direct request's history entry),
+  not only from a History row - the common flow is look at the map, seed from `/`.
+- Starting a spider (from History OR the map) auto-navigates to the Dashboard so the
+  live status strip is immediately visible.
+- Defaults: `max_depth` 5 (was 3; the `max_requests` cap stays the hard bound so deeper
+  is still safe) and a single `/logout` exclude (dropped the default `/signout`; the
+  user adds more).
+- Each site-map host is a collapsible FOLDER node in the tree (structure change so a
+  whole domain collapses like any sub-path folder), NOT a visual restyle - the current
+  look is kept.
+- A port is an identifier, not a quantity: rendered with NO thousands separator
+  (SwiftUI LocalizedStringKey would otherwise group an Int, showing 3,000). A Kit
+  `Formatting.port` helper interpolated as a string fixes it; length/size keep grouping.
+- Tab-switch scroll/selection persistence (same reset-on-reappear family as the earlier
+  divider / detail-tab / history-dropdown bugs): the three section views are kept ALIVE
+  in a container (opacity-toggled) with a single shared toolbar, so switching tabs never
+  rebuilds a view and scroll/sort survive. History selection is model-owned
+  (Kit SectionMemory) so it is not re-initialized on reappear.

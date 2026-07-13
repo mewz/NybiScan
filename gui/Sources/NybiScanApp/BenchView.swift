@@ -13,9 +13,12 @@ struct BenchView: View {
             requestSide.frame(minHeight: 160)
             responseSide.frame(minHeight: 0)
         }
-        .toolbar { sectionPicker }
         .task { if model.benchTabs.isEmpty { await model.loadBench() } }
-        .onDisappear { Task { await model.saveDraft() } }
+        // Views stay alive across tab switches, so save the draft when leaving Bench
+        // (onDisappear no longer fires on a switch).
+        .onChange(of: model.section) { _, newSection in
+            if newSection != .bench { Task { await model.saveDraft() } }
+        }
         .alert("Rename tab", isPresented: Binding(get: { renameTab != nil }, set: { if !$0 { renameTab = nil } })) {
             TextField("Name", text: $renameText)
             Button("Rename") {
@@ -23,16 +26,6 @@ struct BenchView: View {
                 renameTab = nil
             }
             Button("Cancel", role: .cancel) { renameTab = nil }
-        }
-    }
-
-    private var sectionPicker: some ToolbarContent {
-        ToolbarItem(placement: .principal) {
-            Picker("", selection: $model.section) {
-                Text("History").tag(AppSection.history)
-                Text("Bench").tag(AppSection.bench)
-            }
-            .pickerStyle(.segmented).frame(width: 180)
         }
     }
 

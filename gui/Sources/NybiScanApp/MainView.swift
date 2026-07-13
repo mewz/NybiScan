@@ -4,8 +4,18 @@ import NybiScanKit
 
 struct MainView: View {
     @EnvironmentObject var model: AppModel
-    @State private var selection: Int?
     @State private var showOptions = false
+
+    // Selection is model-owned (SectionMemory) so it survives switching tabs and back.
+    private var selectionBinding: Binding<Int?> {
+        Binding(
+            get: { model.sectionMemory.selection(for: "history") },
+            set: { newValue in
+                model.sectionMemory.setSelection(newValue, for: "history")
+                if let id = newValue { Task { await model.select(id: id) } }
+            }
+        )
+    }
     @State private var sortOrder: [KeyPathComparator<HistorySummary>] = [
         KeyPathComparator(\.id, order: .forward)
     ]
@@ -47,26 +57,21 @@ struct MainView: View {
             }
         }
         .navigationTitle(model.project?.name ?? "NybiScan")
-        .onChange(of: selection) { _, newValue in
-            if let id = newValue { Task { await model.select(id: id) } }
-        }
         .onChange(of: sortOrder) { _, _ in resort(force: true) }
         .onReceive(resortTick) { _ in resort(force: false) }
         .onAppear { resort(force: true) }
         .toolbar {
-            ToolbarItem(placement: .principal) {
-                Picker("", selection: $model.section) {
-                    Text("History").tag(AppSection.history)
-                    Text("Bench").tag(AppSection.bench)
+            // The section Picker lives in SectionContainer. These items belong to
+            // History, so they show only when it is the active section (all three
+            // views stay alive, so gate by section rather than by view lifetime).
+            if model.section == .history {
+                ToolbarItem {
+                    Button { showOptions = true } label: { Label("Options", systemImage: "gearshape") }
                 }
-                .pickerStyle(.segmented).frame(width: 180)
-            }
-            ToolbarItem {
-                Button { showOptions = true } label: { Label("Options", systemImage: "gearshape") }
-            }
-            ToolbarItem {
-                Button { Task { await model.reloadHistory(); resort(force: true) } } label: {
-                    Label("Reload", systemImage: "arrow.clockwise")
+                ToolbarItem {
+                    Button { Task { await model.reloadHistory(); resort(force: true) } } label: {
+                        Label("Reload", systemImage: "arrow.clockwise")
+                    }
                 }
             }
         }
@@ -134,7 +139,7 @@ struct MainView: View {
         // extra window width; the narrow fixed columns keep tight widths and never
         // steal room from Host/URL. Host has a hard min floor that fits a full
         // https domain before truncating.
-        Table(sortedRows, selection: $selection, sortOrder: $sortOrder) {
+        Table(sortedRows, selection: selectionBinding, sortOrder: $sortOrder) {
             TableColumn("#", value: \.id) { Text("\($0.id)").monospacedDigit() }
                 .width(min: 36, ideal: 42, max: 60)
             TableColumn("Host", value: \.host) { row in
@@ -167,6 +172,10 @@ struct MainView: View {
         .contextMenu(forSelectionType: Int.self) { ids in
             if let id = ids.first {
                 Button("Send to Bench") { Task { await model.sendToBench(historyId: id) } }
+                Divider()
+                Button("Add to Scope") { Task { await model.addToScope(historyId: id) } }
+                Button("Update Scope Session") { Task { await model.updateScopeSession(historyId: id) } }
+                Button("Spider from This") { Task { await model.prepareSpider(historyId: id) } }
             }
         }
     }
