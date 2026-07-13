@@ -138,10 +138,14 @@ struct BenchView: View {
             let hasNewer = BenchHistoryNav.newer(ids, current: model.viewedSendId) != nil
             HStack(spacing: 4) {
                 Menu {
-                    // Windowed to the most recent 25 (a DISPLAY cap; all sends stay
-                    // stored and reachable via the arrows). Labels are per-tab
-                    // ordinals (1..N), not global bench_history ids.
-                    ForEach(BenchHistoryNav.windowIndices(count: model.benchHistory.count), id: \.self) { i in
+                    // Windowed to 25 (a DISPLAY cap; all sends stay stored and
+                    // reachable via the arrows). The window slides to always contain
+                    // the current position, so #1 stays visible when sitting near the
+                    // old end. Labels are per-tab ordinals (1..N), not global ids.
+                    let current = model.viewedSendId
+                        .flatMap { id in model.benchHistory.firstIndex(where: { $0.id == id }) }
+                        ?? (model.benchHistory.count - 1)
+                    ForEach(BenchHistoryNav.windowIndices(count: model.benchHistory.count, current: current), id: \.self) { i in
                         let h = model.benchHistory[i]
                         Button(Self.entryLabel(ordinal: BenchHistoryNav.ordinal(index: i), h)) {
                             Task { await model.showBenchSend(h.id) }

@@ -413,9 +413,11 @@ app.
   second tab and send it a few times; open its dropdown. On the busy tab, use the `<`
   arrow to step older past the 25-entry window down to send 1.
 - Expected: labels read `1, 2, 3 ...` per tab (each tab starts its own 1), NOT global
-  `#12, #13 ...`; the dropdown shows at most the 25 most recent; the `x/N` indicator
-  reflects ALL sends (N > 25); the `<` arrow still reaches send 1 even though it is
-  outside the dropdown window. Nothing is trimmed from storage.
+  `#12, #13 ...`; the dropdown shows at most 25 entries; the `x/N` indicator reflects
+  ALL sends (N > 25). The 25-entry window SLIDES to always contain the current
+  position: at the newest it shows the most recent 25, and when you step to position 2
+  of 26 the dropdown shows the oldest band (1..25) so send 1 is visible. The `<` arrow
+  reaches send 1 regardless of the window. Nothing is trimmed from storage.
 - Also: send more, reopen the dropdown, and confirm the newest sends now appear (the
   list refreshes live, it does not freeze at an earlier count); pick one entry then a
   different entry and confirm the request/response switches each time (selection does

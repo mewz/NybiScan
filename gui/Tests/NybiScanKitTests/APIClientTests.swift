@@ -215,28 +215,49 @@ final class APIClientTests: XCTestCase {
     }
 
     func testDropdownWindowCapsAt25NewestFirstWithPerTabOrdinals() {
-        // 30 sends: dropdown shows the most recent 25, newest-first; ordinal is the
-        // 1-based per-tab position (index+1), NOT the global bench_history id.
-        let idx = BenchHistoryNav.windowIndices(count: 30)
+        // 30 sends, sitting at the newest: dropdown shows the most recent 25,
+        // newest-first; ordinal is the 1-based per-tab position (index+1), NOT the
+        // global bench_history id.
+        let idx = BenchHistoryNav.windowIndices(count: 30, current: 29)
         XCTAssertEqual(idx.count, 25)
         XCTAssertEqual(idx.first, 29)  // newest (ordinal 30)
         XCTAssertEqual(idx.last, 5)    // oldest still in window (ordinal 6)
         XCTAssertEqual(BenchHistoryNav.ordinal(index: idx.first!), 30)
         XCTAssertEqual(BenchHistoryNav.ordinal(index: idx.last!), 6)
-        // Send #1 (index 0) is OUTSIDE the window but reachable via the arrows.
+        // Send #1 (index 0) is OUTSIDE the newest window but reachable via the arrows.
         XCTAssertFalse(idx.contains(0))
         XCTAssertEqual(BenchHistoryNav.older(Array(0..<30), current: 5), 4)  // step past the window
+    }
+
+    func testDropdownWindowSlidesToContainCurrentPosition() {
+        // 26 sends, sitting at position 2 (index 1): the window must slide to the old
+        // end so #1 (index 0) AND the current #2 are both visible.
+        let atTwo = BenchHistoryNav.windowIndices(count: 26, current: 1)
+        XCTAssertEqual(atTwo.count, 25)
+        XCTAssertTrue(atTwo.contains(0))  // #1 visible
+        XCTAssertTrue(atTwo.contains(1))  // current #2 visible
+        XCTAssertEqual(atTwo.first, 24)   // newest-of-band (ordinal 25); band is 1..25
+        XCTAssertEqual(atTwo.last, 0)     // ordinal 1 at the bottom
+
+        // 26 sends at the newest (index 25): window is the most recent 25 (2..26).
+        let atLatest = BenchHistoryNav.windowIndices(count: 26, current: 25)
+        XCTAssertEqual(atLatest.count, 25)
+        XCTAssertEqual(atLatest.first, 25)      // ordinal 26
+        XCTAssertFalse(atLatest.contains(0))    // #1 not in the newest band
+        XCTAssertEqual(atLatest.last, 1)        // ordinal 2
+
+        // The arrow still reaches the true oldest regardless of the window: < from
+        // position 2 (index 1) reaches position 1 (index 0).
+        XCTAssertEqual(BenchHistoryNav.older(Array(0..<26), current: 1), 0)
     }
 
     func testDropdownWindowReflectsCurrentCount() {
         // Regression: the dropdown must reflect the tab's CURRENT send count, not a
         // stale earlier one (bug: counter showed 10/10 while the list stuck at 7).
-        // The window is a pure function of the count passed in, so as long as the
-        // view passes the live count it lists all current sends.
-        let atSeven = BenchHistoryNav.windowIndices(count: 7)
+        let atSeven = BenchHistoryNav.windowIndices(count: 7, current: 6)
         XCTAssertEqual(atSeven.count, 7)
         XCTAssertEqual(atSeven.first, 6)  // newest of 7 (ordinal 7)
-        let atTen = BenchHistoryNav.windowIndices(count: 10)
+        let atTen = BenchHistoryNav.windowIndices(count: 10, current: 9)
         XCTAssertEqual(atTen.count, 10)
         XCTAssertEqual(atTen.first, 9)  // newest of 10 (ordinal 10), not frozen at 7
         XCTAssertEqual(BenchHistoryNav.ordinal(index: atTen.first!), 10)
@@ -244,10 +265,10 @@ final class APIClientTests: XCTestCase {
 
     func testDropdownWindowShowsAllWhenFewerThan25() {
         // Two independent tabs each number their own sends from 1 (per-tab, not global).
-        let idx = BenchHistoryNav.windowIndices(count: 3)
+        let idx = BenchHistoryNav.windowIndices(count: 3, current: 2)
         XCTAssertEqual(idx, [2, 1, 0])  // newest-first
         XCTAssertEqual(idx.map { BenchHistoryNav.ordinal(index: $0) }, [3, 2, 1])
-        XCTAssertEqual(BenchHistoryNav.windowIndices(count: 0), [])
+        XCTAssertEqual(BenchHistoryNav.windowIndices(count: 0, current: 0), [])
     }
 
     func testNon2xxThrowsControlAPIError() async {

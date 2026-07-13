@@ -28,13 +28,20 @@ public enum BenchHistoryNav {
     public static func ordinal(index: Int) -> Int { index + 1 }
 
     /// Indices (into the oldest -> newest history array) of the sends the dropdown
-    /// should show: the most recent `cap` sends, ordered newest-first for display.
-    /// A DISPLAY cap only - storage is unbounded and the `<`/`>` arrows still
-    /// traverse the entire history, so ordinal 1 (the first send) stays reachable
-    /// even when it falls outside this window.
-    public static func windowIndices(count: Int, cap: Int = 25) -> [Int] {
+    /// should show: a window of up to `cap` sends that always CONTAINS `current` and
+    /// slides as the user navigates (like Burp), ordered newest-first for display.
+    /// A DISPLAY cap only - storage is unbounded and the `<`/`>` arrows still traverse
+    /// the entire history. Because the window follows the position, the current entry
+    /// and its neighbours (e.g. ordinal 1 when sitting at ordinal 2) are always
+    /// visible; at the newest end it shows the most recent `cap`.
+    public static func windowIndices(count: Int, current: Int, cap: Int = 25) -> [Int] {
         guard count > 0 else { return [] }
-        let start = max(0, count - cap)  // most recent `cap` (or all if fewer)
-        return Array((start..<count).reversed())  // newest-first
+        let size = min(cap, count)
+        let cur = min(max(current, 0), count - 1)
+        // Center the window on the current index, then clamp within bounds so it stays
+        // a contiguous size-`cap` band that includes `current`.
+        var start = cur - size / 2
+        start = min(max(start, 0), count - size)
+        return Array((start..<(start + size)).reversed())  // newest-first
     }
 }
