@@ -41,12 +41,16 @@ detection, exfiltrating data, or attacking out-of-scope hosts, and never will.
 
 ## Status
 
-Plans 1, 2, and 3 are done: the headless Python core and persistence layer, the
+Plans 1 through 4 are done: the headless Python core and persistence layer, the
 localhost control API, the in-process mitmproxy-based capture engine with the CA
-lifecycle and a live history WebSocket, and a native macOS SwiftUI front end (a
-thin client of the control API) with project new/open, a live history list,
-request/response detail, and proxy control. See CLAUDE.md for the architecture and
-phased plan, and DECISIONS.md for locked decisions.
+lifecycle and a live history WebSocket, a root Makefile that orchestrates both
+toolchains, and a native macOS SwiftUI front end (a thin client of the control API)
+with project new/open, a live history list, request/response detail, proxy control,
+and Bench (a Repeater analog: craft, edit, and send requests verbatim with multiple
+tabs and per-tab send history). See CLAUDE.md for the architecture and phased plan,
+and DECISIONS.md for locked decisions.
+
+Next is Plan 5: a dashboard site map and scoped spider.
 
 ## Requirements
 
