@@ -363,13 +363,18 @@ final class AppModel: ObservableObject {
         await loadScope()
     }
 
-    /// Open the start-confirmation sheet seeded from a captured request.
+    /// Open the start-confirmation sheet seeded from a captured request. Switches to
+    /// the Dashboard FIRST so the sheet presents over the Dashboard (with the live
+    /// status strip / map), then shows the sheet on the next runloop tick so the tab
+    /// switch has committed before the modal appears.
     func prepareSpider(historyId: Int) async {
         guard let c = client, let d = try? await c.historyEntry(id: historyId) else { return }
         spiderError = nil
         var draft = SpiderDraft()
         draft.seedHistoryId = d.id
         draft.seedHost = d.host
+        section = .dashboard
+        await Task.yield()  // let the tab switch render before presenting the sheet
         spiderDraft = draft
     }
 
