@@ -1,4 +1,5 @@
 import SwiftUI
+import NybiScanKit
 
 struct DetailView: View {
     @EnvironmentObject var model: AppModel
@@ -6,7 +7,7 @@ struct DetailView: View {
     var body: some View {
         if let d = model.detail {
             VStack(alignment: .leading, spacing: 8) {
-                Text("\(d.method) \(d.scheme)://\(d.host):\(d.port)\(d.url)")
+                Text("\(d.method) \(d.scheme)://\(d.host):\(Formatting.port(d.port))\(d.url)")
                     .font(.headline).textSelection(.enabled)
                     .padding([.top, .horizontal])
                 RequestResponseView(

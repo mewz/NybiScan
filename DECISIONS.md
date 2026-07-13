@@ -421,3 +421,34 @@ Terse log of locked decisions. Newest context lives in CLAUDE.md.
   malformed real-world HTML - a missed link is a missed endpoint). JS-rendered / SPA
   links are deferred (no headless browser); CSS/JS/SVG are text and are mapped, other
   binary (images/fonts/archives) is skipped unless include-binary is set.
+
+## Locked (Plan 5 finisher)
+
+- Site-map node "Delete" = MAP-HIDE only, never history deletion. Hidden keys (a host
+  key, or a host+path prefix) persist as a JSON list in `meta` (`sitemap_hidden`); the
+  site-map query filters rows whose host is hidden or whose path is at/below a hidden
+  prefix. The underlying history rows are untouched and stay in the History tab; hiding
+  survives reopen (plaintext + encrypted) and is reversible (`/sitemap/unhide`). A view
+  filter must never destroy evidence.
+- Directly-fetched paths, including the root `/` and any directory fetched directly,
+  are their own nodes carrying their own entry_ids (the core already did this; the
+  dashboard now renders the `/` index node and directory-self nodes). This is a
+  prerequisite for seeding a spider from a dashboard node.
+- The spider can be seeded from a site-map node (its direct request's history entry),
+  not only from a History row - the common flow is look at the map, seed from `/`.
+- Starting a spider (from History OR the map) auto-navigates to the Dashboard so the
+  live status strip is immediately visible.
+- Defaults: `max_depth` 5 (was 3; the `max_requests` cap stays the hard bound so deeper
+  is still safe) and a single `/logout` exclude (dropped the default `/signout`; the
+  user adds more).
+- Each site-map host is a collapsible FOLDER node in the tree (structure change so a
+  whole domain collapses like any sub-path folder), NOT a visual restyle - the current
+  look is kept.
+- A port is an identifier, not a quantity: rendered with NO thousands separator
+  (SwiftUI LocalizedStringKey would otherwise group an Int, showing 3,000). A Kit
+  `Formatting.port` helper interpolated as a string fixes it; length/size keep grouping.
+- Tab-switch scroll/selection persistence (same reset-on-reappear family as the earlier
+  divider / detail-tab / history-dropdown bugs): the three section views are kept ALIVE
+  in a container (opacity-toggled) with a single shared toolbar, so switching tabs never
+  rebuilds a view and scroll/sort survive. History selection is model-owned
+  (Kit SectionMemory) so it is not re-initialized on reappear.

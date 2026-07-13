@@ -172,6 +172,12 @@ def test_in_scope_host_without_headers_is_unauthenticated(tmp_path):
         proj.close(); origin.stop()
 
 
+def test_config_defaults():
+    cfg = SpiderConfig(seed_history_id=0)
+    assert cfg.max_depth == 5
+    assert cfg.exclude == [{"pattern": "/logout", "is_regex": False}]  # single default
+
+
 def test_include_binary_option(tmp_path):
     origin = MapOrigin({"/": ("text/html", anchors("/img.png"))})
     proj = _proj(tmp_path)

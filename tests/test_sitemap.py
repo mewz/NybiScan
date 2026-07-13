@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from nybiscan.core import sitemap
 from nybiscan.core.filters import StorageContext
 from nybiscan.core.schemas import CaptureStatus, HistoryRecord
@@ -90,7 +92,48 @@ def test_scheme_and_port_split_hosts(tmp_path):
     assert keys == {("http", "dup.test", 80), ("https", "dup.test", 443)}
 
 
+def test_root_and_directory_self_are_their_own_nodes(tmp_path):
+    # A directly-fetched path (incl. root /) is its own node with entry_ids, even when
+    # it also has children. Prerequisite for seeding a spider from a dashboard node.
+    conn = _conn(tmp_path)
+    ctx = _ctx(tmp_path)
+    repository.insert_history_batch(conn, [
+        _rec("h.test", "/"),            # the index request
+        _rec("h.test", "/users"),       # directory fetched directly
+        _rec("h.test", "/users/6"),     # a child under it
+    ], ctx)
+    conn.commit()
+    host = sitemap.build_host_map(conn, "h.test")
+    # Root / carries its own entry (the index request).
+    assert host.root.full_path == "/" and len(host.root.entry_ids) == 1
+    users = _find(host.root, "/users")
+    assert users is not None and len(users.entry_ids) == 1   # directory-self kept
+    assert _find(users, "/users/6") is not None              # child hangs under it
+
+
 def test_empty_history_is_empty_map(tmp_path):
     conn = _conn(tmp_path)
     assert sitemap.build_sitemap(conn) == []
     assert sitemap.build_host_map(conn, "nope.test") is None
+
+
+@pytest.mark.parametrize("passphrase", [None, "map-secret"])
+def test_hidden_map_keys_persist_encrypted(tmp_path, passphrase):
+    from nybiscan.core import project as core_project
+    from nybiscan.core.store import repository
+
+    bundle = tmp_path / "p.nybiscan"
+    proj = core_project.create_project(bundle, name="P", passphrase=passphrase)
+    proj.writer.submit(lambda c: repository.insert_history_batch(
+        c, [_rec("h.test", "/x")],
+        StorageContext(is_encrypted=passphrase is not None,
+                       bodies_dir=(None if passphrase else bundle / "bodies"),
+                       spill_threshold=1 << 20)))
+    proj.writer.submit(lambda c: repository.add_hidden_map_key(c, sitemap.host_key("https", "h.test", 443)))
+    proj.close()
+
+    reopened = core_project.open_project(bundle, passphrase=passphrase)
+    try:
+        assert sitemap.build_sitemap(reopened.read_conn) == []  # still hidden after reopen
+    finally:
+        reopened.close()

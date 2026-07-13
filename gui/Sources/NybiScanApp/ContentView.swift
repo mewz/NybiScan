@@ -13,15 +13,48 @@ struct ContentView: View {
             AuthGateView()
         case .ready:
             if model.project?.projectOpen == true {
-                switch model.section {
-                case .history: MainView()
-                case .bench: BenchView()
-                case .dashboard: DashboardView()
-                }
+                SectionContainer()
             } else {
                 ProjectView()
             }
         }
+    }
+}
+
+/// Holds all three section views ALIVE (opacity-toggled) so switching tabs never
+/// rebuilds them - scroll position, selection, and sort survive the switch (the
+/// reset-on-reappear family). Owns the single section Picker and the spider start
+/// sheet, so those work regardless of the active section.
+struct SectionContainer: View {
+    @EnvironmentObject var model: AppModel
+
+    var body: some View {
+        ZStack {
+            MainView().opacity(model.section == .history ? 1 : 0)
+                .allowsHitTesting(model.section == .history)
+            BenchView().opacity(model.section == .bench ? 1 : 0)
+                .allowsHitTesting(model.section == .bench)
+            DashboardView().opacity(model.section == .dashboard ? 1 : 0)
+                .allowsHitTesting(model.section == .dashboard)
+        }
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Picker("", selection: $model.section) {
+                    Text("History").tag(AppSection.history)
+                    Text("Bench").tag(AppSection.bench)
+                    Text("Dashboard").tag(AppSection.dashboard)
+                }
+                .pickerStyle(.segmented).frame(width: 280)
+            }
+        }
+        .sheet(isPresented: Binding(
+            get: { model.spiderDraft != nil }, set: { if !$0 { model.spiderDraft = nil } })
+        ) { SpiderStartSheet() }
+        .alert("Spider", isPresented: Binding(
+            get: { model.spiderError != nil }, set: { if !$0 { model.spiderError = nil } })
+        ) {
+            Button("OK", role: .cancel) { model.spiderError = nil }
+        } message: { Text(model.spiderError ?? "") }
     }
 }
 

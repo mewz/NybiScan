@@ -490,3 +490,24 @@ app.
   unless include-binary is on; results appear in the site-map + history tagged as
   spider-sourced. Proxy capture still works during/after a crawl (both writers coexist).
 - Verified: Plan 5
+
+### 5.4 Finisher: port format, index nodes, hide, node-spider, nav, folders, scroll
+- What: the Plan 5 finisher refinements.
+- Command + Expected:
+  - Port: a request on port 3000 shows as 3000 (NOT 3,000) in the detail title and the
+    site-map host label. Length/size columns keep their grouping.
+  - Index + directory nodes: a host with a root request shows a `/` node in the map;
+    a directory fetched directly (e.g. /users) shows its own node AND its children
+    (e.g. /users/6) nested under it.
+  - Host as folder: each site-map host is a collapsible folder (expand/collapse the
+    whole domain), consistent with sub-path folders. The visual style is unchanged.
+  - Hide: right-click a map node -> "Delete (hide from map)" removes it from the map
+    view only (calls `/sitemap/hide`); its requests still appear in the History tab,
+    and the hide persists across close/reopen (`/sitemap/unhide` reverses it).
+  - Spider from map: right-click a map node (including `/`) -> "Spider from This" opens
+    the start sheet seeded from that node's request; scope-gated identically.
+  - Auto-nav: starting a spider (from History or the map) jumps to the Dashboard so the
+    live status strip is visible.
+  - Scroll persistence: scroll the History list, switch to Dashboard/Bench and back;
+    the History list stays at the same scroll position and keeps its selection.
+- Verified: Plan 5

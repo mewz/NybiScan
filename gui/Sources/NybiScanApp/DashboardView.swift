@@ -1,13 +1,48 @@
 import SwiftUI
 import NybiScanKit
 
-extension SitemapNode {
-    // OutlineGroup needs an optional children key path (nil = leaf).
-    var childrenOrNil: [SitemapNode]? { children.isEmpty ? nil : children }
+/// A unified site-map tree item: a host is a top-level collapsible folder, and each
+/// path (including the index "/") is a node under it. A directly-fetched path carries
+/// its own entry_ids (and can be seeded/hidden), even when it also has children.
+struct MapItem: Identifiable {
+    let id: String
+    let title: String
+    let entryIds: [Int]
+    let sources: [String]
+    let isHost: Bool
+    let scheme: String
+    let host: String
+    let port: Int
+    let path: String?   // nil = the whole host
+    var children: [MapItem]?
 }
 
-/// Dashboard: passive site-map (over captured history) + scope management + the
-/// live spider status. Thin client: all crawling/scope logic is in the core.
+private func mapNode(_ h: SitemapHost, _ n: SitemapNode) -> MapItem {
+    let kids = n.children.map { mapNode(h, $0) }
+    return MapItem(id: h.id + n.fullPath, title: n.name, entryIds: n.entryIds,
+                   sources: n.sources, isHost: false, scheme: h.scheme, host: h.host,
+                   port: h.port, path: n.fullPath, children: kids.isEmpty ? nil : kids)
+}
+
+private func buildMapItems(_ hosts: [SitemapHost]) -> [MapItem] {
+    hosts.map { h in
+        var kids: [MapItem] = []
+        // The index "/" shows as its own node when the root was fetched directly.
+        if !h.root.entryIds.isEmpty {
+            kids.append(MapItem(id: h.id + "/", title: "/", entryIds: h.root.entryIds,
+                                sources: h.root.sources, isHost: false, scheme: h.scheme,
+                                host: h.host, port: h.port, path: "/", children: nil))
+        }
+        kids.append(contentsOf: h.root.children.map { mapNode(h, $0) })
+        return MapItem(id: h.id, title: "\(h.scheme)://\(h.host):\(Formatting.port(h.port))",
+                       entryIds: [], sources: [], isHost: true, scheme: h.scheme,
+                       host: h.host, port: h.port, path: nil,
+                       children: kids.isEmpty ? nil : kids)
+    }
+}
+
+/// Dashboard: passive site-map + scope management + live spider status. Thin client:
+/// all crawling/scope/hide logic is in the core.
 struct DashboardView: View {
     @EnvironmentObject var model: AppModel
     @State private var newScopeHost = ""
@@ -22,29 +57,7 @@ struct DashboardView: View {
             Divider()
             DetailView().frame(minHeight: 150)  // selected path's entry (read-only)
         }
-        .toolbar { sectionPicker }
         .task { await model.loadSitemap(); await model.loadScope() }
-        .sheet(isPresented: sheetBinding) { SpiderStartSheet() }
-        .alert("Spider", isPresented: Binding(
-            get: { model.spiderError != nil }, set: { if !$0 { model.spiderError = nil } })
-        ) {
-            Button("OK", role: .cancel) { model.spiderError = nil }
-        } message: { Text(model.spiderError ?? "") }
-    }
-
-    private var sectionPicker: some ToolbarContent {
-        ToolbarItem(placement: .principal) {
-            Picker("", selection: $model.section) {
-                Text("History").tag(AppSection.history)
-                Text("Bench").tag(AppSection.bench)
-                Text("Dashboard").tag(AppSection.dashboard)
-            }
-            .pickerStyle(.segmented).frame(width: 280)
-        }
-    }
-
-    private var sheetBinding: Binding<Bool> {
-        Binding(get: { model.spiderDraft != nil }, set: { if !$0 { model.spiderDraft = nil } })
     }
 
     // ----- spider status strip -----
@@ -66,7 +79,7 @@ struct DashboardView: View {
         .padding(.horizontal, 10).padding(.vertical, 6)
     }
 
-    // ----- site-map tree -----
+    // ----- site-map tree (host = collapsible folder) -----
 
     private var sitemapPane: some View {
         VStack(spacing: 0) {
@@ -83,34 +96,39 @@ struct DashboardView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List {
-                    ForEach(model.sitemap) { host in
-                        Section("\(host.scheme)://\(host.host):\(host.port)") {
-                            OutlineGroup(host.root.children, children: \.childrenOrNil) { node in
-                                nodeRow(node)
-                            }
-                        }
+                    OutlineGroup(buildMapItems(model.sitemap), children: \.children) { item in
+                        nodeRow(item)
                     }
                 }
             }
         }
     }
 
-    private func nodeRow(_ node: SitemapNode) -> some View {
+    private func nodeRow(_ item: MapItem) -> some View {
         HStack(spacing: 6) {
-            Image(systemName: node.entryIds.isEmpty ? "folder" : "doc.text")
+            Image(systemName: item.isHost ? "network" : (item.children != nil ? "folder" : "doc.text"))
                 .font(.caption2).foregroundStyle(.secondary)
-            Text(node.name).lineLimit(1)
-            if node.sources.contains("spider") {
+            Text(item.title).lineLimit(1)
+            if item.sources.contains("spider") {
                 Text("spider").font(.caption2).foregroundStyle(.orange)
             }
             Spacer()
-            if !node.entryIds.isEmpty {
-                Text("\(node.entryIds.count)").font(.caption2).foregroundStyle(.secondary)
+            if !item.entryIds.isEmpty {
+                Text(verbatim: "\(item.entryIds.count)").font(.caption2).foregroundStyle(.secondary)
             }
         }
         .contentShape(Rectangle())
         .onTapGesture {
-            if let id = node.entryIds.first { Task { await model.select(id: id) } }
+            if let id = item.entryIds.first { Task { await model.select(id: id) } }
+        }
+        .contextMenu {
+            if let id = item.entryIds.first {
+                Button("Spider from This") { Task { await model.prepareSpider(fromEntryId: id) } }
+            }
+            Button("Delete (hide from map)", role: .destructive) {
+                Task { await model.hideMapNode(scheme: item.scheme, host: item.host,
+                                               port: item.port, path: item.path) }
+            }
         }
     }
 
@@ -156,8 +174,9 @@ struct DashboardView: View {
 }
 
 /// Start-confirmation for a crawl (Burp's config step). Shows the full config and
-/// requires explicit approval; the seed host and stored-session source are shown.
-private struct SpiderStartSheet: View {
+/// requires explicit approval; the seed host is shown. Presented by SectionContainer
+/// so it works from any tab.
+struct SpiderStartSheet: View {
     @EnvironmentObject var model: AppModel
 
     var body: some View {

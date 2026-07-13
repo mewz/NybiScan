@@ -91,3 +91,53 @@ def test_sitemap_tree_and_sources(client):
     assert php["sources"] == ["spider"]
     assert len(php["entry_ids"]) == 1
     assert client.get("/sitemap/nope.test", headers=AUTH).status_code == 404
+
+
+def test_hide_node_filters_map_but_keeps_history(client, tmp_path):
+    _seed_history(client, HistoryRecord(scheme="https", host="www.test", port=443,
+                                        method="GET", url="/keep", status=200))
+    _seed_history(client, HistoryRecord(scheme="https", host="www.test", port=443,
+                                        method="GET", url="/secret/x", status=200))
+    _seed_history(client, HistoryRecord(scheme="https", host="gone.test", port=443,
+                                        method="GET", url="/y", status=200))
+
+    def paths_for(host):
+        hm = client.get(f"/sitemap/{host}", headers=AUTH).json()
+        out = []
+        def walk(n):
+            if n["entry_ids"]:
+                out.append(n["full_path"])
+            for c in n["children"]:
+                walk(c)
+        walk(hm["root"]); return out
+
+    # Hide a path subtree.
+    r = client.post("/sitemap/hide", json={"scheme": "https", "host": "www.test",
+                                           "port": 443, "path": "/secret"}, headers=AUTH)
+    assert r.status_code == 200
+    assert "/keep" in paths_for("www.test")
+    assert "/secret/x" not in paths_for("www.test")  # subtree hidden from the map
+
+    # Hide a whole host.
+    client.post("/sitemap/hide", json={"scheme": "https", "host": "gone.test", "port": 443}, headers=AUTH)
+    assert not any(h["host"] == "gone.test" for h in client.get("/sitemap", headers=AUTH).json())
+
+    # History rows are NOT deleted by hiding.
+    entries = client.get("/history?limit=0", headers=AUTH).json()
+    urls = {(e["host"], e["url"]) for e in entries}
+    assert ("www.test", "/secret/x") in urls and ("gone.test", "/y") in urls
+
+    # Unhide restores.
+    client.post("/sitemap/unhide", json={"scheme": "https", "host": "gone.test", "port": 443}, headers=AUTH)
+    assert any(h["host"] == "gone.test" for h in client.get("/sitemap", headers=AUTH).json())
+
+
+def test_hidden_map_keys_persist_across_reopen(client, tmp_path):
+    _seed_history(client, HistoryRecord(scheme="https", host="www.test", port=443,
+                                        method="GET", url="/x", status=200))
+    client.post("/sitemap/hide", json={"scheme": "https", "host": "www.test", "port": 443}, headers=AUTH)
+    path = str(tmp_path / "p.nybiscan")
+    client.post("/projects/close", headers=AUTH)
+    client.post("/projects/open", json={"path": path}, headers=AUTH)
+    # Still hidden after reopen.
+    assert client.get("/sitemap", headers=AUTH).json() == []

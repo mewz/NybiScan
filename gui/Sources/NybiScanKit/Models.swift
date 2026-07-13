@@ -4,6 +4,23 @@ import Foundation
 // JSON keys map to camelCase properties via convertFromSnakeCase (see NybiCoders),
 // so no CodingKeys boilerplate is needed.
 
+public enum Formatting {
+    /// A port is an IDENTIFIER, not a quantity: render as a raw integer string with no
+    /// thousands separator (SwiftUI's LocalizedStringKey would otherwise group it).
+    public static func port(_ port: Int) -> String { String(port) }
+}
+
+/// Per-section view state (a selection anchor) that PERSISTS across tab switches.
+/// Switching away and back must NOT reset it - it is not re-initialized on reappear.
+public struct SectionMemory: Sendable, Equatable {
+    private var selection: [String: Int] = [:]
+    public init() {}
+    public func selection(for section: String) -> Int? { selection[section] }
+    public mutating func setSelection(_ id: Int?, for section: String) {
+        selection[section] = id
+    }
+}
+
 public enum NybiCoders {
     public static func makeDecoder() -> JSONDecoder {
         let d = JSONDecoder()
@@ -366,6 +383,16 @@ public struct SitemapHost: Codable, Sendable, Equatable, Identifiable {
     public let entryCount: Int
     public let root: SitemapNode
     public var id: String { "\(scheme)://\(host):\(port)" }
+}
+
+public struct HideSitemapPayload: Encodable, Sendable {
+    public let scheme: String
+    public let host: String
+    public let port: Int
+    public let path: String?  // nil hides the whole host; a path hides it + descendants
+    public init(scheme: String, host: String, port: Int, path: String? = nil) {
+        self.scheme = scheme; self.host = host; self.port = port; self.path = path
+    }
 }
 
 public struct SpiderStatus: Codable, Sendable, Equatable {

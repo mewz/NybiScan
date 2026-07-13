@@ -35,7 +35,7 @@ class ExcludeEntry(BaseModel):
 
 class SpiderStartRequest(BaseModel):
     seed_history_id: int
-    max_depth: int = 3
+    max_depth: int = 5
     exclude: Optional[List[ExcludeEntry]] = None
     rate_limit_ms: int = 500
     max_requests: int = 300

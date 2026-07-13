@@ -351,6 +351,45 @@ final class APIClientTests: XCTestCase {
         }
     }
 
+    // ----- Plan 5 finisher -----
+
+    func testPortRendersWithoutThousandsSeparator() {
+        XCTAssertEqual(Formatting.port(3000), "3000")
+        XCTAssertEqual(Formatting.port(8080), "8080")
+        XCTAssertEqual(Formatting.port(80), "80")
+    }
+
+    func testSectionMemoryPersistsAcrossSwitch() {
+        var memory = SectionMemory()
+        memory.setSelection(5, for: "history")
+        // "Switch" to another tab: its selection is independent and does not clear history's.
+        XCTAssertNil(memory.selection(for: "dashboard"))
+        // "Switch" back: history selection is retained (not reset on reappear).
+        XCTAssertEqual(memory.selection(for: "history"), 5)
+        memory.setSelection(9, for: "history")
+        XCTAssertEqual(memory.selection(for: "history"), 9)
+    }
+
+    func testHideSitemapNodePostsPathOrHost() async throws {
+        StubURLProtocol.responder = { _ in (200, Data(#"{"hidden":"x"}"#.utf8)) }
+        try await makeClient().hideSitemapNode(
+            HideSitemapPayload(scheme: "https", host: "a.test", port: 443, path: "/secret"))
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/sitemap/hide")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.httpMethod, "POST")
+    }
+
+    func testSitemapRootIndexNodeDataPresent() throws {
+        // A host with a directly-fetched root exposes it as root.entry_ids (the "/"
+        // index node the dashboard renders).
+        let json = Data("""
+        {"scheme":"https","host":"h.test","port":443,"entry_count":1,
+         "root":{"name":"/","full_path":"/","entry_ids":[1],"methods":["GET"],
+                 "statuses":[200],"sources":["browser"],"children":[]}}
+        """.utf8)
+        let host = try NybiCoders.makeDecoder().decode(SitemapHost.self, from: json)
+        XCTAssertEqual(host.root.entryIds, [1])  // index node has its own entry
+    }
+
     func testNon2xxThrowsControlAPIError() async {
         StubURLProtocol.responder = { _ in (401, Data(#"{"detail":"invalid token"}"#.utf8)) }
         do {

@@ -331,3 +331,32 @@ def get_scope(conn) -> List[ScopeEntry]:
         "SELECT id, host, note, headers FROM scope ORDER BY host"
     ).fetchall()
     return [ScopeEntry(id=r[0], host=r[1], note=r[2], headers=r[3]) for r in rows]
+
+
+# ----- site-map hidden keys (view filter; never touches history) ------------
+
+import json as _json  # noqa: E402
+
+_HIDDEN_META_KEY = "sitemap_hidden"
+
+
+def get_hidden_map_keys(conn) -> List[str]:
+    raw = get_meta(conn, _HIDDEN_META_KEY)
+    if not raw:
+        return []
+    try:
+        return list(_json.loads(raw))
+    except Exception:
+        return []
+
+
+def add_hidden_map_key(conn, key: str) -> None:
+    keys = set(get_hidden_map_keys(conn))
+    keys.add(key)
+    set_meta(conn, _HIDDEN_META_KEY, _json.dumps(sorted(keys)))
+
+
+def remove_hidden_map_key(conn, key: str) -> None:
+    keys = set(get_hidden_map_keys(conn))
+    keys.discard(key)
+    set_meta(conn, _HIDDEN_META_KEY, _json.dumps(sorted(keys)))

@@ -8,9 +8,15 @@ form a nested tree. Only actually-observed (mapped) nodes appear; the grey
 
 from __future__ import annotations
 
+import json
 from typing import List, Optional
 
 from pydantic import BaseModel, Field
+
+# Site-map nodes the user hid from the map view are stored (persisted) as a JSON list
+# of keys in meta under this key. Hiding is a VIEW filter only: the underlying history
+# rows are never touched and remain in the History tab.
+HIDDEN_META_KEY = "sitemap_hidden"
 
 
 class SitemapNode(BaseModel):
@@ -72,6 +78,39 @@ def _split_path(url: str) -> List[str]:
     return [seg for seg in path.split("/") if seg]
 
 
+def host_key(scheme: str, host: str, port: int) -> str:
+    return f"{scheme}://{host}:{port}"
+
+
+def make_hidden_key(scheme: str, host: str, port: int, path: Optional[str]) -> str:
+    """A hidden key is the host key (hides the whole host) optionally plus a path
+    (hides that path and its descendants)."""
+    key = host_key(scheme, host, port)
+    return key + path if path else key
+
+
+def _hidden_keys(conn) -> List[str]:
+    row = conn.execute(
+        "SELECT value FROM meta WHERE key = ?", (HIDDEN_META_KEY,)
+    ).fetchone()
+    if not row or not row[0]:
+        return []
+    try:
+        return list(json.loads(row[0]))
+    except Exception:
+        return []
+
+
+def _row_hidden(scheme, host, port, path, host_hides, path_hides) -> bool:
+    hk = host_key(scheme, host, port)
+    if hk in host_hides:
+        return True
+    for prefix in path_hides.get(hk, ()):  # path prefixes for this host
+        if path == prefix or path.startswith(prefix.rstrip("/") + "/"):
+            return True
+    return False
+
+
 _ROW_SQL = (
     "SELECT id, scheme, host, port, method, url, status, source FROM history "
     "ORDER BY host, id"
@@ -97,10 +136,23 @@ def _build(conn, host: Optional[str]) -> List[SitemapHost]:
     else:
         rows = conn.execute(_ROW_SQL).fetchall()
 
+    # Split persisted hidden keys into host-hides and per-host path-prefix hides. This
+    # is a VIEW filter over the query; history rows are never removed.
+    host_hides: set = set()
+    path_hides: dict = {}
+    for k in _hidden_keys(conn):
+        marker = k.find("/", k.find("://") + 3)  # first slash after "scheme://host:port"
+        if marker == -1:
+            host_hides.add(k)
+        else:
+            path_hides.setdefault(k[:marker], []).append(k[marker:])
+
     # Group by (scheme, host, port); a host on http and https is two map entries.
     roots: dict = {}
     counts: dict = {}
     for rid, scheme, h, port, method, url, status, source in rows:
+        if _row_hidden(scheme, h, port, url.split("?", 1)[0], host_hides, path_hides):
+            continue
         key = (scheme, h, port)
         root = roots.get(key)
         if root is None:

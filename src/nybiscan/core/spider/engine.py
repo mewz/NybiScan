@@ -27,10 +27,12 @@ from . import rules
 @dataclass
 class SpiderConfig:
     seed_history_id: int
-    max_depth: int = 3
+    # Depth 5 by default; the max_requests cap is the real hard bound, so a deeper
+    # default stays safe. Exclude defaults to a single logout path (the user can add
+    # more); hitting logout kills the session the crawl depends on.
+    max_depth: int = 5
     exclude: list = field(default_factory=lambda: [
         {"pattern": "/logout", "is_regex": False},
-        {"pattern": "/signout", "is_regex": False},
     ])
     rate_limit_ms: int = 500
     max_requests: int = 300

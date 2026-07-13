@@ -18,13 +18,11 @@ enum AppSection: Equatable {
 struct SpiderDraft: Equatable {
     var seedHistoryId: Int = 0
     var seedHost: String = ""
-    var maxDepth: Int = 3
+    var maxDepth: Int = 5
     var rateLimitMs: Int = 500
     var maxRequests: Int = 300
     var includeBinary: Bool = false
-    var exclude: [SpiderExclude] = [
-        SpiderExclude(pattern: "/logout"), SpiderExclude(pattern: "/signout"),
-    ]
+    var exclude: [SpiderExclude] = [SpiderExclude(pattern: "/logout")]
 }
 
 /// Editable working copy of a Bench tab's request (port kept as text for the field).
@@ -64,6 +62,10 @@ final class AppModel: ObservableObject {
     @Published var benchSending = false
     @Published var benchNote: String?  // e.g. dropped-body on seed
     @Published var viewedSendId: Int?  // which prior send the panes currently show (nil = newest)
+
+    // Per-section selection anchor, preserved across tab switches (not reset on
+    // reappear). See SectionMemory.
+    @Published var sectionMemory = SectionMemory()
 
     // Dashboard: site-map + scope + spider
     @Published var sitemap: [SitemapHost] = []
@@ -321,6 +323,18 @@ final class AppModel: ObservableObject {
 
     func loadSitemap() async {
         sitemap = (try? await client?.sitemap()) ?? []
+    }
+
+    /// Hide a host (path nil) or a path subtree from the map VIEW. Does NOT delete
+    /// history: the requests remain in the History tab.
+    func hideMapNode(scheme: String, host: String, port: Int, path: String?) async {
+        try? await client?.hideSitemapNode(HideSitemapPayload(scheme: scheme, host: host, port: port, path: path))
+        await loadSitemap()
+    }
+
+    /// Seed a spider from a site-map node's own history entry (opens the start sheet).
+    func prepareSpider(fromEntryId entryId: Int) async {
+        await prepareSpider(historyId: entryId)
     }
 
     /// Add a captured request's host to scope, storing THAT request's headers as the

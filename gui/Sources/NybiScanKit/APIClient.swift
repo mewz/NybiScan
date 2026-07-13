@@ -147,6 +147,15 @@ public struct ControlAPIClient: Sendable {
         try await send("GET", "/sitemap/\(host)")
     }
 
+    /// Hide a host or path subtree from the map VIEW only (history rows are kept).
+    public func hideSitemapNode(_ payload: HideSitemapPayload) async throws {
+        try await sendNoContent("POST", "/sitemap/hide", body: try Self.encode(payload))
+    }
+
+    public func unhideSitemapNode(_ payload: HideSitemapPayload) async throws {
+        try await sendNoContent("POST", "/sitemap/unhide", body: try Self.encode(payload))
+    }
+
     public func scope() async throws -> [ScopeHost] { try await send("GET", "/scope") }
 
     public func addScope(_ payload: ScopeAddPayload) async throws -> [ScopeHost] {
