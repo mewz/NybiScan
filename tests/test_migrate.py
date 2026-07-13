@@ -1,4 +1,4 @@
-"""Schema migration to the current version (v1 -> v4 and v2 -> v4)."""
+"""Schema migration to the current version (v1 -> current and v2 -> current)."""
 
 from __future__ import annotations
 
@@ -103,6 +103,8 @@ def _build_bundle(bundle, history_ddl, version, passphrase=None):
 def _assert_current(conn):
     cols = {row[1] for row in conn.execute("PRAGMA table_info(history)").fetchall()}
     assert {"flow_id", "req_content_encoding", "resp_content_encoding", "extension"} <= cols
+    # v5: source + spider_run_id on history.
+    assert {"source", "spider_run_id"} <= cols
     indexes = {row[1] for row in conn.execute("PRAGMA index_list(history)").fetchall()}
     assert "idx_history_flow_id" in indexes
     # v4: Bench tables present.
@@ -110,8 +112,15 @@ def _assert_current(conn):
         row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
     }
     assert {"bench_tabs", "bench_history"} <= tables
+    # v5: scope gains a headers column.
+    scope_cols = {row[1] for row in conn.execute("PRAGMA table_info(scope)").fetchall()}
+    assert "headers" in scope_cols
+    # A pre-v5 row defaults to browser-sourced with no spider run.
+    assert conn.execute(
+        "SELECT source, spider_run_id FROM history WHERE url='/done'"
+    ).fetchone() == ("browser", None)
     version = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0]
-    assert version == "4"
+    assert version == "5"
 
 
 @pytest.mark.parametrize("passphrase", [None, "correct horse"])

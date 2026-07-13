@@ -58,8 +58,9 @@ struct MainView: View {
                 Picker("", selection: $model.section) {
                     Text("History").tag(AppSection.history)
                     Text("Bench").tag(AppSection.bench)
+                    Text("Dashboard").tag(AppSection.dashboard)
                 }
-                .pickerStyle(.segmented).frame(width: 180)
+                .pickerStyle(.segmented).frame(width: 280)
             }
             ToolbarItem {
                 Button { showOptions = true } label: { Label("Options", systemImage: "gearshape") }
@@ -167,6 +168,10 @@ struct MainView: View {
         .contextMenu(forSelectionType: Int.self) { ids in
             if let id = ids.first {
                 Button("Send to Bench") { Task { await model.sendToBench(historyId: id) } }
+                Divider()
+                Button("Add to Scope") { Task { await model.addToScope(historyId: id) } }
+                Button("Update Scope Session") { Task { await model.updateScopeSession(historyId: id) } }
+                Button("Spider from This") { Task { await model.prepareSpider(historyId: id) } }
             }
         }
     }

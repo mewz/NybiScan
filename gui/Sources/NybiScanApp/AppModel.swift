@@ -11,6 +11,20 @@ enum AppPhase: Equatable {
 enum AppSection: Equatable {
     case history
     case bench
+    case dashboard
+}
+
+/// Editable config for a spider start (shown in the start-confirmation sheet).
+struct SpiderDraft: Equatable {
+    var seedHistoryId: Int = 0
+    var seedHost: String = ""
+    var maxDepth: Int = 3
+    var rateLimitMs: Int = 500
+    var maxRequests: Int = 300
+    var includeBinary: Bool = false
+    var exclude: [SpiderExclude] = [
+        SpiderExclude(pattern: "/logout"), SpiderExclude(pattern: "/signout"),
+    ]
 }
 
 /// Editable working copy of a Bench tab's request (port kept as text for the field).
@@ -50,6 +64,13 @@ final class AppModel: ObservableObject {
     @Published var benchSending = false
     @Published var benchNote: String?  // e.g. dropped-body on seed
     @Published var viewedSendId: Int?  // which prior send the panes currently show (nil = newest)
+
+    // Dashboard: site-map + scope + spider
+    @Published var sitemap: [SitemapHost] = []
+    @Published var scopeHosts: [ScopeHost] = []
+    @Published var spiderStatus: SpiderStatus?
+    @Published var spiderDraft: SpiderDraft?   // non-nil while the start sheet is up
+    @Published var spiderError: String?        // e.g. "seed host not in scope"
 
     private var core: CoreProcess?
     private var client: ControlAPIClient?
@@ -151,6 +172,7 @@ final class AppModel: ObservableObject {
         await refreshProxyStatus()
         await refreshCaInfo()
         await loadBench()
+        await loadScope()
         await autoStartProxyIfEnabled()
     }
 
@@ -289,6 +311,101 @@ final class AppModel: ObservableObject {
             section = .bench
             await selectBenchTab(tab.id, save: false)
         }
+    }
+
+    // ----- dashboard: scope, site-map, spider -------------------------------
+
+    func loadScope() async {
+        scopeHosts = (try? await client?.scope()) ?? []
+    }
+
+    func loadSitemap() async {
+        sitemap = (try? await client?.sitemap()) ?? []
+    }
+
+    /// Add a captured request's host to scope, storing THAT request's headers as the
+    /// host's session (so the spider crawls it authenticated as this request was).
+    func addToScope(historyId: Int) async {
+        guard let c = client, let d = try? await c.historyEntry(id: historyId) else { return }
+        let after = try? await c.addScope(ScopeAddPayload(host: d.host, headers: d.reqHeadersRaw))
+        if let after { scopeHosts = after }
+    }
+
+    /// Refresh a host's stored session headers from a current request ("update session").
+    func updateScopeSession(historyId: Int) async {
+        guard let c = client, let d = try? await c.historyEntry(id: historyId) else { return }
+        let after = try? await c.updateScope(d.host, ScopeUpdatePayload(headers: d.reqHeadersRaw))
+        if let after { scopeHosts = after }
+    }
+
+    func addScope(host: String) async {
+        let h = host.trimmingCharacters(in: .whitespaces)
+        guard !h.isEmpty, let c = client else { return }
+        if let after = try? await c.addScope(ScopeAddPayload(host: h)) { scopeHosts = after }
+    }
+
+    func removeScope(_ host: String) async {
+        try? await client?.removeScope(host)
+        await loadScope()
+    }
+
+    /// Open the start-confirmation sheet seeded from a captured request.
+    func prepareSpider(historyId: Int) async {
+        guard let c = client, let d = try? await c.historyEntry(id: historyId) else { return }
+        spiderError = nil
+        var draft = SpiderDraft()
+        draft.seedHistoryId = d.id
+        draft.seedHost = d.host
+        spiderDraft = draft
+    }
+
+    /// Launch the crawl from the current draft. Surfaces the out-of-scope error.
+    func startSpider() async {
+        guard let c = client, let draft = spiderDraft else { return }
+        let payload = SpiderStartPayload(
+            seedHistoryId: draft.seedHistoryId, maxDepth: draft.maxDepth,
+            exclude: draft.exclude, rateLimitMs: draft.rateLimitMs,
+            maxRequests: draft.maxRequests, includeBinary: draft.includeBinary
+        )
+        do {
+            spiderStatus = try await c.spiderStart(payload)
+            spiderDraft = nil
+            section = .dashboard
+            pollSpider()
+        } catch let err as ControlAPIError {
+            spiderError = Self.detailMessage(err) ?? "Spider failed to start"
+        } catch {
+            spiderError = "Spider failed to start"
+        }
+    }
+
+    func stopSpider() async {
+        try? await client?.spiderStop()
+        spiderStatus = try? await client?.spiderStatus()
+        await loadSitemap()
+    }
+
+    private func pollSpider() {
+        Task { [weak self] in
+            guard let self else { return }
+            while true {
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                guard let status = try? await self.client?.spiderStatus() else { break }
+                self.spiderStatus = status
+                await self.loadSitemap()  // let the map fill in live
+                if !status.running { break }
+            }
+        }
+    }
+
+    private static func detailMessage(_ err: ControlAPIError) -> String? {
+        // The API returns {"detail": "..."}; surface it for the user.
+        if let data = err.body.data(using: .utf8),
+           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let detail = obj["detail"] as? String {
+            return detail
+        }
+        return err.body.isEmpty ? nil : err.body
     }
 
     private func autoStartProxyIfEnabled() async {

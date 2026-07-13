@@ -271,6 +271,86 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(BenchHistoryNav.windowIndices(count: 0, current: 0), [])
     }
 
+    // ----- Plan 5: scope, site-map, spider -----
+
+    func testSitemapDecodesTree() async throws {
+        StubURLProtocol.responder = { _ in
+            (200, Data("""
+            [{"scheme":"https","host":"www.test","port":443,"entry_count":2,
+              "root":{"name":"/","full_path":"/","entry_ids":[],"methods":[],"statuses":[],
+                      "sources":[],"children":[
+                {"name":"cgi","full_path":"/cgi","entry_ids":[],"methods":[],"statuses":[],
+                 "sources":[],"children":[
+                  {"name":"u.php","full_path":"/cgi/u.php","entry_ids":[7],"methods":["GET"],
+                   "statuses":[200],"sources":["spider"],"children":[]}]}]}}]
+            """.utf8))
+        }
+        let hosts = try await makeClient().sitemap()
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/sitemap")
+        XCTAssertEqual(hosts.count, 1)
+        let php = hosts[0].root.children[0].children[0]
+        XCTAssertEqual(php.fullPath, "/cgi/u.php")
+        XCTAssertEqual(php.entryIds, [7])
+        XCTAssertEqual(php.sources, ["spider"])
+    }
+
+    func testScopeAddAndUpdatePaths() async throws {
+        StubURLProtocol.responder = { _ in
+            (200, Data(#"[{"id":1,"host":"a.test","note":null,"headers":"Cookie: s=1\r\n"}]"#.utf8))
+        }
+        let after = try await makeClient().addScope(ScopeAddPayload(host: "a.test", headers: "Cookie: s=1\r\n"))
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/scope")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.httpMethod, "POST")
+        XCTAssertEqual(after.first?.host, "a.test")
+        XCTAssertEqual(after.first?.headers, "Cookie: s=1\r\n")
+
+        _ = try await makeClient().updateScope("a.test", ScopeUpdatePayload(headers: "Cookie: s=2\r\n"))
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/scope/a.test")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.httpMethod, "PUT")
+
+        try await makeClient().removeScope("a.test")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/scope/a.test")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.httpMethod, "DELETE")
+    }
+
+    func testSpiderStartAndStatusDecode() async throws {
+        StubURLProtocol.responder = { _ in
+            (200, Data(#"{"running":true,"found":3,"saved":2,"cap":300,"current":"https://a/x","run_id":"r1"}"#.utf8))
+        }
+        let payload = SpiderStartPayload(
+            seedHistoryId: 5, maxDepth: 2,
+            exclude: [SpiderExclude(pattern: "/logout"), SpiderExclude(pattern: "/api/v\\d", isRegex: true)],
+            rateLimitMs: 0
+        )
+        let st = try await makeClient().spiderStart(payload)
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/spider/start")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.httpMethod, "POST")
+        XCTAssertEqual(st.found, 3)
+        XCTAssertEqual(st.saved, 2)
+        XCTAssertEqual(st.runId, "r1")
+
+        // Exclude entries encode as pattern + is_regex only (id is a client-side key).
+        let enc = NybiCoders.makeEncoder()
+        let json = String(data: try enc.encode(SpiderExclude(pattern: "/x", isRegex: true)), encoding: .utf8)!
+        XCTAssertTrue(json.contains("\"is_regex\":true"), json)
+        XCTAssertFalse(json.contains("\"id\""), json)
+    }
+
+    func testSpiderStartOutOfScopeSurfacesError() async {
+        StubURLProtocol.responder = { _ in
+            (400, Data(#"{"detail":"seed host 'a.test' not in scope - add it first"}"#.utf8))
+        }
+        do {
+            _ = try await makeClient().spiderStart(SpiderStartPayload(seedHistoryId: 1))
+            XCTFail("expected error")
+        } catch let err as ControlAPIError {
+            XCTAssertEqual(err.status, 400)
+            XCTAssertTrue(err.body.contains("not in scope"))
+        } catch {
+            XCTFail("wrong error type: \(error)")
+        }
+    }
+
     func testNon2xxThrowsControlAPIError() async {
         StubURLProtocol.responder = { _ in (401, Data(#"{"detail":"invalid token"}"#.utf8)) }
         do {

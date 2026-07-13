@@ -16,6 +16,7 @@ struct ContentView: View {
                 switch model.section {
                 case .history: MainView()
                 case .bench: BenchView()
+                case .dashboard: DashboardView()
                 }
             } else {
                 ProjectView()

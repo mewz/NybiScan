@@ -454,3 +454,39 @@ app.
   h2 -> h1.1 rules, dropped-body noted); the detail pane's normal Copy/Paste are
   still present alongside "Send to Bench".
 - Verified: Plan 4
+
+## Plan 5 - Dashboard site-map + scope + spider
+
+### 5.1 Passive site-map from existing history
+- What: the Dashboard shows a host -> path tree built by querying existing history.
+- Command: capture some traffic (or open a project with history), switch to Dashboard
+  (the History/Bench/Dashboard toggle). The GUI calls `/sitemap`.
+- Expected: hosts expand to their paths; clicking a path shows one of its history
+  entries in the read-only detail pane. No new requests are made to view the map.
+- Verified: Plan 5
+
+### 5.2 Scope management (add / update session / remove)
+- What: manage the in-scope host list; each host stores the session it was added with.
+- Command: right-click a captured request -> "Add to Scope" (calls `/scope`, storing
+  that request's headers). Right-click a fresher request for the same host -> "Update
+  Scope Session" (calls `/scope/{host}`). In the Dashboard scope panel, add a host by
+  name and remove a host (calls `/scope` and `/scope/{host}`).
+- Expected: the host appears in the scope panel with a session indicator when headers
+  were captured; "update session" refreshes the stored headers; removing a host drops
+  it from scope but LEAVES its spider findings in the site-map / history.
+- Verified: Plan 5
+
+### 5.3 Scope-gated spider with rails
+- What: crawl from a seed request, gated by scope, with the mandatory rails.
+- Command: right-click a request whose host is NOT yet in scope -> "Spider from This";
+  starting errors ("not in scope"). Add the host to scope, retry. The start sheet shows
+  the config (seed host, max depth, rate limit, max requests, include-binary, and the
+  exclude list with a per-entry regex checkbox). Approve to start (calls
+  `/spider/start`). Watch the status strip ("found N / saved M (cap MAX)") and press
+  Stop (calls `/spider/stop`); `/spider/status` drives the live counts.
+- Expected: an out-of-scope seed is refused until added; the crawl runs with visible
+  found/saved counts and stops promptly on Stop; excluded paths (a logout path) are
+  never requested; out-of-scope hosts are never fetched; binary resources are skipped
+  unless include-binary is on; results appear in the site-map + history tagged as
+  spider-sourced. Proxy capture still works during/after a crawl (both writers coexist).
+- Verified: Plan 5

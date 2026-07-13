@@ -102,6 +102,8 @@ def _record_to_row(rec: HistoryRecord, ctx: StorageContext) -> tuple:
         rec.resp_content_encoding,
         rec.resp_complete_ts,
         rec.capture_status.value,
+        rec.source,
+        rec.spider_run_id,
     )
 
 
@@ -203,6 +205,8 @@ def _row_to_record(row: tuple, ctx: Optional[StorageContext]) -> HistoryRecord:
         resp_content_encoding,
         resp_complete_ts,
         capture_status,
+        source,
+        spider_run_id,
     ) = row
 
     if req_body is None and req_body_ref and ctx is not None:
@@ -238,6 +242,8 @@ def _row_to_record(row: tuple, ctx: Optional[StorageContext]) -> HistoryRecord:
         resp_content_encoding=resp_content_encoding,
         resp_complete_ts=resp_complete_ts,
         capture_status=CaptureStatus(capture_status),
+        source=source,
+        spider_run_id=spider_run_id,
     )
 
 
@@ -295,6 +301,33 @@ def set_scope(conn, hosts: List[str]) -> None:
     conn.commit()
 
 
+def add_scope_host(
+    conn, host: str, note: Optional[str] = None, headers: Optional[str] = None
+) -> None:
+    """Add a host to scope (or update its note/headers if already present). Upsert on
+    the UNIQUE host so re-adding refreshes the stored session headers."""
+    conn.execute(
+        "INSERT INTO scope (host, note, headers) VALUES (?, ?, ?) "
+        "ON CONFLICT(host) DO UPDATE SET note = excluded.note, headers = excluded.headers",
+        (host, note, headers),
+    )
+
+
+def update_scope_headers(conn, host: str, headers: Optional[str]) -> int:
+    """Refresh a host's stored session headers ('update session'). Returns rowcount."""
+    cur = conn.execute("UPDATE scope SET headers = ? WHERE host = ?", (headers, host))
+    return cur.rowcount
+
+
+def remove_scope_host(conn, host: str) -> int:
+    """Remove ONLY the scope row for host. Deliberately does NOT touch history /
+    site-map rows (spider findings for that host persist). Returns rowcount."""
+    cur = conn.execute("DELETE FROM scope WHERE host = ?", (host,))
+    return cur.rowcount
+
+
 def get_scope(conn) -> List[ScopeEntry]:
-    rows = conn.execute("SELECT id, host, note FROM scope ORDER BY host").fetchall()
-    return [ScopeEntry(id=r[0], host=r[1], note=r[2]) for r in rows]
+    rows = conn.execute(
+        "SELECT id, host, note, headers FROM scope ORDER BY host"
+    ).fetchall()
+    return [ScopeEntry(id=r[0], host=r[1], note=r[2], headers=r[3]) for r in rows]

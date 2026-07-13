@@ -18,6 +18,9 @@ dependencies = [
     "argon2-cffi",
     "tomli-w",
     "mitmproxy==12.2.3",
+    # Spider link/form extraction (Plan 5). Robust parsing of malformed real-world
+    # HTML matters: a missed link is a missed endpoint.
+    "beautifulsoup4",
 ]
 
 [project.optional-dependencies]

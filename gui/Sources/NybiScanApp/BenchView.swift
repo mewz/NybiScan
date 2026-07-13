@@ -31,8 +31,9 @@ struct BenchView: View {
             Picker("", selection: $model.section) {
                 Text("History").tag(AppSection.history)
                 Text("Bench").tag(AppSection.bench)
+                Text("Dashboard").tag(AppSection.dashboard)
             }
-            .pickerStyle(.segmented).frame(width: 180)
+            .pickerStyle(.segmented).frame(width: 280)
         }
     }
 

@@ -81,6 +81,11 @@ class HistoryRecord(BaseModel):
 
     capture_status: CaptureStatus = CaptureStatus.pending
 
+    # provenance: browser (proxy capture) or spider (active crawl). spider_run_id
+    # ties a spider row to the run that produced it (None for browser rows).
+    source: str = "browser"
+    spider_run_id: Optional[str] = None
+
     @property
     def host_display(self) -> str:
         return f"{self.scheme}://{self.host}:{self.port}"
@@ -101,11 +106,18 @@ class SiteEntry(BaseModel):
 
 
 class ScopeEntry(BaseModel):
-    """An allowed host for this project. Enforcement lands with spider/MCP."""
+    """An in-scope host for this project. The spider crawls only in-scope hosts.
+
+    headers holds the session (raw request headers, incl. Cookie) captured when the
+    host was added to scope, so the spider crawls that host authenticated as the
+    request that seeded it. Sensitive: lives in the bundle DB (encrypted for
+    encrypted projects). None means the host is crawled unauthenticated.
+    """
 
     id: Optional[int] = None
     host: str
     note: Optional[str] = None
+    headers: Optional[str] = None
 
 
 class ProjectMeta(BaseModel):

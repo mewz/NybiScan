@@ -25,11 +25,16 @@ authorized to test.
   per-tab send history.
 - Project persistence (a self-contained `.nybiscan` bundle, plaintext or encrypted).
 - CA lifecycle (generate, import, export) for HTTPS interception.
+- Dashboard site-map: a host to path tree built by querying captured history.
+- Scope management: an in-scope host list (with per-host stored sessions) that bounds
+  active testing.
+- Scoped spider: a seed-based crawler that stays within scope, records into the shared
+  history, and ships safety rails (start confirmation, rate limit, request cap, stop,
+  absolute exclude list).
 - Makefile build orchestration across the Python core and the Swift GUI.
 
 ### Roadmap (planned, not yet built)
 
-- Dashboard site-map and scoped spider (Plan 5).
 - MCP server over the core so AI agents can drive history and testing (Plan 6).
 - A Claude skill for MCP-driven source review and testing (Plan 7).
 
@@ -41,16 +46,17 @@ detection, exfiltrating data, or attacking out-of-scope hosts, and never will.
 
 ## Status
 
-Plans 1 through 4 are done: the headless Python core and persistence layer, the
+Plans 1 through 5 are done: the headless Python core and persistence layer, the
 localhost control API, the in-process mitmproxy-based capture engine with the CA
 lifecycle and a live history WebSocket, a root Makefile that orchestrates both
 toolchains, and a native macOS SwiftUI front end (a thin client of the control API)
 with project new/open, a live history list, request/response detail, proxy control,
-and Bench (a Repeater analog: craft, edit, and send requests verbatim with multiple
-tabs and per-tab send history). See CLAUDE.md for the architecture and phased plan,
-and DECISIONS.md for locked decisions.
+Bench (a Repeater analog: craft, edit, and send requests verbatim with multiple tabs
+and per-tab send history), and a Dashboard with a site-map, scope management, and a
+scope-gated spider. See CLAUDE.md for the architecture and phased plan, and
+DECISIONS.md for locked decisions.
 
-Next is Plan 5: a dashboard site map and scoped spider.
+Next is Plan 6: an MCP server over the core.
 
 ## Requirements
 

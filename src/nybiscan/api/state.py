@@ -13,6 +13,7 @@ from typing import Any, Dict, Optional, Set
 
 from ..core.project import Project
 from ..core.proxy.engine import ProxyEngine
+from ..core.spider.engine import SpiderEngine
 
 
 class WsHub:
@@ -46,6 +47,7 @@ class AppState:
         self.token = token
         self.project: Optional[Project] = None
         self.proxy: Optional[ProxyEngine] = None
+        self.spider: Optional[SpiderEngine] = None
         self.ws_hub = WsHub()
         self.loop: Optional[asyncio.AbstractEventLoop] = None
         self._event_unsub = None
@@ -82,9 +84,15 @@ class AppState:
         self.project = project
         self._event_unsub = project.events.subscribe(self._bridge)
 
+    def stop_spider(self) -> None:
+        if self.spider is not None:
+            self.spider.stop()
+            self.spider = None
+
     def close_project(self) -> None:
-        # Stop the proxy first (it writes into the project), then unsubscribe,
-        # then close the project (drains writer + checkpoints WAL).
+        # Stop the spider + proxy first (both write into the project), then
+        # unsubscribe, then close the project (drains writer + checkpoints WAL).
+        self.stop_spider()
         if self.proxy is not None:
             self.proxy.stop()
             self.proxy = None

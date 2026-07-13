@@ -114,7 +114,18 @@ hermetic and never touch the real user config or CA.
    Cancel, bounded timeout recorded as error='timeout'/'cancelled'), append-only
    per-tab history with Burp-style `<`/`>` + direct-pick navigation restoring both
    panes, and detail-pane "Send to Bench" parity. NEXT is Plan 5.
-5. Dashboard site map + scoped spider.
+5. Dashboard site map + scope + scoped spider (done): a passive site-map (host -> path
+   tree queried over the shared history table, mapped nodes only), minimal scope
+   management (per-host in-scope list with per-host stored session headers; add/update-
+   session/remove; add-to-scope from row + detail), and a scope-gated seed-based spider
+   (schema v5: history.source + spider_run_id, scope.headers). The spider records
+   DIRECTLY into the shared history via the single writer tagged source=spider (never
+   through the proxy), crawls any in-scope host from the seed path downward using each
+   host's own stored session, and ships the mandatory rails (start-confirmation, safe
+   rate limit via interruptible wait, hard request cap, prompt Stop, absolute exclude
+   list checked before every fetch, out-of-scope refusal). beautifulsoup4 for link/form
+   extraction (JS rendering deferred). New /sitemap, /scope, /spider/* API. NEXT is
+   Plan 6.
 6. MCP server over the core.
 7. Claude skill for MCP-driven source review + testing.
 
