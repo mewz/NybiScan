@@ -31,11 +31,12 @@ authorized to test.
 - Scoped spider: a seed-based crawler that stays within scope, records into the shared
   history, and ships safety rails (start confirmation, rate limit, request cap, stop,
   absolute exclude list).
+- MCP server so an AI agent can drive NybiScan (read history/source, spider, bench, and
+  agent-fetch) for authorized testing, scope-gated by the core.
 - Makefile build orchestration across the Python core and the Swift GUI.
 
 ### Roadmap (planned, not yet built)
 
-- MCP server over the core so AI agents can drive history and testing (Plan 6).
 - A Claude skill for MCP-driven source review and testing (Plan 7).
 
 ## Authorized use only
@@ -46,17 +47,38 @@ detection, exfiltrating data, or attacking out-of-scope hosts, and never will.
 
 ## Status
 
-Plans 1 through 5 are done: the headless Python core and persistence layer, the
+Plans 1 through 6 are done: the headless Python core and persistence layer, the
 localhost control API, the in-process mitmproxy-based capture engine with the CA
 lifecycle and a live history WebSocket, a root Makefile that orchestrates both
-toolchains, and a native macOS SwiftUI front end (a thin client of the control API)
+toolchains, a native macOS SwiftUI front end (a thin client of the control API)
 with project new/open, a live history list, request/response detail, proxy control,
 Bench (a Repeater analog: craft, edit, and send requests verbatim with multiple tabs
 and per-tab send history), and a Dashboard with a site-map, scope management, and a
-scope-gated spider. See CLAUDE.md for the architecture and phased plan, and
+scope-gated spider, plus an MCP server that lets an AI agent drive NybiScan for
+authorized testing. See CLAUDE.md for the architecture and phased plan, and
 DECISIONS.md for locked decisions.
 
-Next is Plan 6: an MCP server over the core.
+Next is Plan 7: a Claude skill that uses the MCP for source review and testing.
+
+## Using NybiScan with an AI agent (MCP)
+
+NybiScan ships an MCP server (`nybiscan mcp`, install with `pip install -e ".[mcp]"`)
+so an AI agent (Claude Code or any MCP client) can drive it for AUTHORIZED penetration
+testing. It is a thin PEER CLIENT of the same localhost control API the GUI uses, so it
+requires the core running and a project open, and it inherits the core's enforcement
+automatically.
+
+- Read tools: list history for a domain, review a request/response with bodies decoded
+  to text (large bodies are fully retrievable, in ranges), get the site map, and read
+  the current scope.
+- Active tools: run a scope-gated spider, craft/send a Bench request, and fetch a URL
+  through NybiScan so it lands in history and the site map as agent-sourced traffic.
+- Scope is READ-ONLY to the agent: the human owns what is in scope (set it in the GUI or
+  CLI); the agent operates strictly within that boundary. Out-of-scope active actions are
+  refused by the core with an actionable message (add the host to scope, then retry).
+
+The MCP is an executor, not an authorizer: authorization judgment sits with the model and
+the human operator; the tools are framed for authorized testing against in-scope targets.
 
 ## Requirements
 

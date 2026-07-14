@@ -109,6 +109,15 @@ def cmd_serve(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_mcp(args: argparse.Namespace) -> int:
+    """Run the MCP server (stdio) so an AI agent can drive NybiScan for authorized
+    testing. Requires the control API running + a project open (peer client)."""
+    from ..mcp.server import run  # imports the [mcp] extra; lazy so other commands do not
+
+    run()
+    return 0
+
+
 def cmd_health_check(args: argparse.Namespace) -> int:
     """Probe a running control API using runtime.json. Prints PASS/FAIL."""
     from ..api.server import read_runtime
@@ -359,6 +368,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_serve = sub.add_parser("serve", help="run the control API")
     p_serve.add_argument("--port", type=int, default=None)
     p_serve.set_defaults(func=cmd_serve)
+
+    p_mcp = sub.add_parser("mcp", help="run the MCP server (stdio) for an AI agent")
+    p_mcp.set_defaults(func=cmd_mcp)
 
     p_hc = sub.add_parser("health-check", help="probe a running control API")
     p_hc.set_defaults(func=cmd_health_check)

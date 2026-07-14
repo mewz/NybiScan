@@ -115,6 +115,14 @@ def insert_history_batch(conn, records: List[HistoryRecord], ctx: StorageContext
     conn.executemany(_SITE_SQL, site_rows)
 
 
+def insert_history_one(conn, record: HistoryRecord, ctx: StorageContext) -> int:
+    """Insert one record (+ its site row) and return the new entry id. Used by the
+    synchronous single-fetch path (agent_fetch) via writer.submit."""
+    cur = conn.execute(_INSERT_SQL, _record_to_row(record, ctx))
+    conn.execute(_SITE_SQL, (record.host, record.path, record.req_start_ts))
+    return cur.lastrowid
+
+
 _UPDATE_RESPONSE_SQL = """
 UPDATE history SET
     status = ?, resp_length = ?, mime_type = ?, remote_ip = ?, resp_headers_raw = ?,

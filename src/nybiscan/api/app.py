@@ -10,6 +10,7 @@ from fastapi import FastAPI
 
 from .. import __version__
 from .routes import (
+    agent,
     bench,
     ca,
     config,
@@ -51,4 +52,5 @@ def create_app(state: AppState, on_startup: Optional[Callable[[AppState], None]]
     app.include_router(scope.router)
     app.include_router(sitemap.router)
     app.include_router(spider.router)
+    app.include_router(agent.router)
     return app

@@ -28,6 +28,10 @@ dependencies = [
 # what starlette.testclient now uses; installing it avoids the deprecated httpx
 # fallback path. We only touch an http client via TestClient.
 dev = ["pytest", "httpx2"]
+# The MCP server (Plan 6) is an OPT-IN extra so the core install is unburdened. It
+# resolves cleanly against the pydantic<2.12 / mitmproxy pins. Only nybiscan.mcp.server
+# imports it; the MCP tool logic + /agent/fetch are tested without the SDK.
+mcp = ["mcp"]
 
 [project.scripts]
 nybiscan = "nybiscan.cli.__main__:main"

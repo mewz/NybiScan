@@ -452,3 +452,45 @@ Terse log of locked decisions. Newest context lives in CLAUDE.md.
   in a container (opacity-toggled) with a single shared toolbar, so switching tabs never
   rebuilds a view and scroll/sort survive. History selection is model-owned
   (Kit SectionMemory) so it is not re-initialized on reappear.
+
+## Locked (Plan 6: MCP server)
+
+- The MCP is an EXECUTOR, not an authorizer. It maps agent tool-calls to control-API calls
+  and shapes results; authorization judgment sits at the model level (+ the operator and
+  the human directing the engagement). No per-action human confirmation, no authorization
+  logic in the MCP.
+- Thin PEER CLIENT of the control API - the SAME API the GUI uses. Enforcement (scope-
+  gating, spider rails) stays in the core; the MCP physically cannot exceed what the API
+  allows, so "same scope as the GUI" is automatic. A small `Caller` seam (`HttpCaller` over
+  stdlib urllib + runtime.json, no new HTTP dep) makes the tool logic hermetically testable
+  via a TestClient-backed caller (no live server, no MCP SDK).
+- Scope is READ-ONLY to the agent (human-owned boundary): expose `get_scope` only; NO
+  scope_add / scope_update / scope_remove tools. The human governs WHAT is in scope; the
+  model governs HOW it tests within scope. Out-of-scope active actions are refused by the
+  core and surfaced as an INFORMATIVE, ACTIONABLE message (not in scope; refused; ask the
+  operator to add the host to scope in NybiScan, then retry).
+- ALL agent active actions respect scope: spider (seed host, core-gated), agent_fetch (URL
+  host, core-gated), and MCP `bench_send` (connection-bar TARGET host, gated in the tool
+  wrapper on the AGENT PATH ONLY). The GUI/manual Bench stays UNRESTRICTED and the core
+  Bench engine is unchanged: Plan 4's "the human clicks send" per-send authorization holds
+  for the GUI but does NOT transfer to an autonomous agent, so the agent path substitutes
+  the scope gate. This is the one agent-side check; everything else is core enforcement.
+- Tools exposed: read (list_history, get_request_response, get_sitemap, get_sitemap_host,
+  get_scope) + active (spider start/stop/status, bench_create, bench_send, agent_fetch).
+  NOT exposed: project lifecycle, proxy start/stop, CA, config (human setup), scope writes,
+  and a one-shot send_request (the agent uses bench_create + bench_send; thinnest).
+- get_request_response base64-decodes bodies to TEXT. Large bodies NEVER hide source: the
+  default returns a capped preview WITH the total size and a marker, and the FULL body or
+  any offset/length range is retrievable (a multi-MB minified bundle reads in pieces).
+  Binary/undecodable and capture-dropped bodies return a clear marker, not garbage.
+- agent_fetch is the one genuinely new capability (POST /agent/fetch): a scope-gated
+  one-shot direct GET recorded as source="agent", reusing the shared send/response handling
+  (build_get + bench send_raw + decode + text filter) and the single BatchWriter. NO schema
+  change - source is free-text (TEXT DEFAULT 'browser', no CHECK), so 'agent' flows through
+  history + sitemap unchanged. TLS-no-verify is a CONSCIOUS inheritance of the bench/spider
+  posture (authorized testing connects where authorized, incl. staging/self-signed; a
+  genuine handshake failure still lands in the recorded status/error).
+- The MCP SDK (`mcp`) is an OPT-IN extra `[mcp]`; only server.py imports it (transport
+  wiring). It resolves cleanly against the pydantic<2.12 / mitmproxy pins. The tool logic
+  + /agent/fetch are tested without the SDK. `nybiscan mcp` runs the stdio server; it needs
+  the core running + a project open (fails fast with a clear message otherwise).

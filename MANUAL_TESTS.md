@@ -511,3 +511,45 @@ app.
   - Scroll persistence: scroll the History list, switch to Dashboard/Bench and back;
     the History list stays at the same scroll position and keeps its selection.
 - Verified: Plan 5
+
+## Plan 6 - MCP server
+
+Prereq: install the MCP extra (`pip install -e ".[mcp]"`), have the core running
+(open a project in the app, or `nybiscan serve`) with a project open, and connect an
+MCP client (e.g. Claude Code) to `nybiscan mcp`.
+
+### 6.1 Read tools: history, source, sitemap, scope
+- What: the agent inspects captured traffic and scope.
+- Command: via the MCP client, list history for a domain; get a request/response for an
+  entry; get the sitemap; get scope.
+- Expected: history returns summaries (incl. source); the request/response comes back
+  with bodies DECODED to text (JSON/HTML/JS, not base64); a large JS body returns a
+  preview with the total size and is FULLY retrievable via full/offset/length; the
+  sitemap and scope return correctly.
+- Verified: Plan 6
+
+### 6.2 Active tools within scope
+- What: the agent runs scoped active testing.
+- Command: add a host to scope in the app/CLI (the agent cannot). Then, via MCP: run a
+  scoped spider seeded from a captured request and read spider status; create a Bench tab
+  and send a crafted request to the in-scope host; fetch a URL with agent_fetch.
+- Expected: the spider runs and reports found/saved; the Bench send returns the decoded
+  response; `/agent/fetch` records the URL and it appears in history + the sitemap tagged
+  as agent-sourced.
+- Verified: Plan 6
+
+### 6.3 Scope is human-owned; out-of-scope is refused with an actionable message
+- What: the agent cannot widen scope, and out-of-scope active actions are refused clearly.
+- Command: via MCP, attempt a spider / agent_fetch / bench send to a host NOT in scope.
+  Confirm no scope-write tool exists.
+- Expected: each active action is refused by the core with an actionable message (target
+  not in scope; out-of-scope actions refused; ask the operator to add the host to scope in
+  NybiScan, then retry). The agent has no tool to add scope itself; it must relay the
+  request to the operator. The GUI/manual Bench remains unrestricted (unchanged).
+- Verified: Plan 6
+
+### 6.4 Fail-fast when the core is not running
+- What: clear error when the backend is absent.
+- Command: with the core stopped (no runtime.json), invoke any MCP tool.
+- Expected: a clear "NybiScan is not running - start it first" error, not a stack trace.
+- Verified: Plan 6

@@ -126,7 +126,17 @@ hermetic and never touch the real user config or CA.
    list checked before every fetch, out-of-scope refusal). beautifulsoup4 for link/form
    extraction (JS rendering deferred). New /sitemap, /scope, /spider/* API. NEXT is
    Plan 6.
-6. MCP server over the core.
+6. MCP server over the core (done): a thin peer-client of the control API (the same API
+   the GUI uses) so an AI agent can drive NybiScan for authorized testing. Executor not
+   authorizer: enforcement stays in the core, so the MCP inherits the GUI's scope
+   automatically. Read tools (list_history, get_request_response with bodies decoded to
+   text + full/range retrieval, get_sitemap[/host], get_scope) + active tools (spider
+   start/stop/status, bench_create/bench_send, agent_fetch). Scope is READ-ONLY to the
+   agent (human-owned; no scope-write tools); out-of-scope active actions are refused with
+   an actionable message. MCP bench_send is scope-gated on the agent path only (GUI Bench
+   unchanged). New POST /agent/fetch records a scope-gated one-shot GET as source=agent
+   (no schema change). MCP SDK is an opt-in [mcp] extra; only mcp/server.py imports it;
+   `nybiscan mcp` runs the stdio server. NEXT is Plan 7.
 7. Claude skill for MCP-driven source review + testing.
 
 Do not start the next plan until the current test gate passes.
